@@ -1,15 +1,16 @@
 #version 330 core
 
 // Uniforms
-//uniform float progress;
+uniform sampler2D cur_tex;
+uniform sampler2D next_tex;
 
 // Inputs
 in vec2 frag_pos;
-//in vec2 frag_tex;
+in vec2 frag_tex;
 
 // Outputs
 out vec4 color;
 
 void main() {
-	color = vec4(1.0, 1.0, 1.0, 1.0);
+	color = texture(cur_tex, frag_tex);
 }

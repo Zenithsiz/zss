@@ -14,6 +14,9 @@ x11 = {version = "2.18.2", features = ["xlib", "glx", "xrender"]}
 # Opengl
 gl = "0.14.0"
 
+# Image
+image = "0.23.14"
+
 # Error handling
 anyhow = "1.0.40"
 
