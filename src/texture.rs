@@ -3,6 +3,8 @@
 // Imports
 use std::mem::MaybeUninit;
 
+use image::{ImageBuffer, Rgba};
+
 /// A texture
 pub struct Texture {
 	/// Id
@@ -36,6 +38,28 @@ impl Texture {
 	pub fn bind(&self) {
 		unsafe {
 			gl::BindTexture(gl::TEXTURE_2D, self.id);
+		}
+	}
+
+	/// Updates this texture
+	pub fn update(&self, image: &ImageBuffer<Rgba<u8>, Vec<u8>>) {
+		// Bind ourselves
+		self.bind();
+
+		// Then upload and generate mip-maps
+		unsafe {
+			gl::TexImage2D(
+				gl::TEXTURE_2D,
+				0,
+				gl::RGBA as i32,
+				image.width() as i32,
+				image.height() as i32,
+				0,
+				gl::RGBA,
+				gl::UNSIGNED_BYTE,
+				image.as_ptr() as *const _,
+			);
+			gl::GenerateMipmap(gl::TEXTURE_2D);
 		}
 	}
 }

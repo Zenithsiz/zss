@@ -20,7 +20,7 @@ mod window;
 
 // Imports
 use anyhow::Context;
-use image::{GenericImageView, ImageBuffer, Rgba};
+use image::GenericImageView;
 use rand::prelude::SliceRandom;
 use std::{mem, path::Path};
 use texture::Texture;
@@ -75,6 +75,7 @@ fn main() -> Result<(), anyhow::Error> {
 	let mut cur_path = 0;
 	let (mut dir, mut tex_offset, mut max) = self::setup_new_image(
 		&paths[cur_path],
+		&tex,
 		window_width,
 		window_height,
 		vao.vertex_buffer_id(),
@@ -117,6 +118,7 @@ fn main() -> Result<(), anyhow::Error> {
 
 				(dir, tex_offset, max) = self::setup_new_image(
 					&paths[cur_path],
+					&tex,
 					window_width,
 					window_height,
 					vao.vertex_buffer_id(),
@@ -133,7 +135,7 @@ fn main() -> Result<(), anyhow::Error> {
 /// Opens and setups a new image
 #[allow(clippy::type_complexity)] // TODO
 fn setup_new_image(
-	path: impl AsRef<Path>, window_width: u32, window_height: u32, vertex_buffer: u32, swap_dir: bool,
+	path: impl AsRef<Path>, tex: &Texture, window_width: u32, window_height: u32, vertex_buffer: u32, swap_dir: bool,
 ) -> Result<([f32; 2], [f32; 2], [f32; 2]), anyhow::Error> {
 	// Open the image, resizing it to it's max
 	// TODO: Resize before opening with a custom generic image view
@@ -157,7 +159,7 @@ fn setup_new_image(
 	let image = image.thumbnail_exact(resize_width, resize_height).to_rgba8();
 
 	// And update our texture
-	self::update_tex(&image);
+	tex.update(&image);
 
 	// Then create the uvs
 	let (uvs, dir, tex_offset, max) = self::create_uvs(
@@ -179,24 +181,6 @@ fn setup_new_image(
 	];
 	self::update_vertices(vertex_buffer, &vertices);
 	Ok((dir, tex_offset, max))
-}
-
-/// Updates a texture
-fn update_tex(image: &ImageBuffer<Rgba<u8>, Vec<u8>>) {
-	unsafe {
-		gl::TexImage2D(
-			gl::TEXTURE_2D,
-			0,
-			gl::RGBA as i32,
-			image.width() as i32,
-			image.height() as i32,
-			0,
-			gl::RGBA,
-			gl::UNSIGNED_BYTE,
-			image.as_ptr() as *const _,
-		);
-		gl::GenerateMipmap(gl::TEXTURE_2D);
-	}
 }
 
 /// Creates the uvs for an image
