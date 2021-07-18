@@ -118,8 +118,7 @@ fn main() -> Result<(), anyhow::Error> {
 			});
 		});
 
-		progress += 0.01;
-
+		progress += 1.0 / 60.0 / 30.0;
 
 		// Finally swap buffers
 		window_state.swap_buffers();
