@@ -17,6 +17,9 @@ pub struct XWindowState {
 
 	/// window
 	window: u64,
+
+	/// Window attributes
+	attrs: xlib::XWindowAttributes,
 }
 
 impl XWindowState {
@@ -137,7 +140,16 @@ impl XWindowState {
 			gl::Viewport(0, 0, window_attrs.width, window_attrs.height);
 		}
 
-		Ok(Self { display, window })
+		Ok(Self {
+			display,
+			window,
+			attrs: window_attrs,
+		})
+	}
+
+	/// Window size
+	pub fn size(&self) -> [u32; 2] {
+		[self.attrs.width as u32, self.attrs.height as u32]
 	}
 
 	/// Processes all X events

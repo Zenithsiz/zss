@@ -1,8 +1,8 @@
 #version 330 core
 
 // Uniforms
-uniform sampler2D cur_tex;
-uniform sampler2D next_tex;
+uniform sampler2D tex;
+uniform vec2 tex_offset;
 
 // Inputs
 in vec2 frag_pos;
@@ -12,5 +12,5 @@ in vec2 frag_tex;
 out vec4 color;
 
 void main() {
-	color = texture(cur_tex, frag_tex);
+	color = texture(tex, frag_tex + tex_offset);
 }

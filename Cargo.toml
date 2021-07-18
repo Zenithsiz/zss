@@ -17,6 +17,9 @@ gl = "0.14.0"
 # Image
 image = "0.23.14"
 
+# Random
+rand = "0.8.4"
+
 # Error handling
 anyhow = "1.0.40"
 

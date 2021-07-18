@@ -14,9 +14,12 @@ pub mod x;
 
 // Imports
 use anyhow::Context;
+use image::{GenericImageView, ImageBuffer, Rgba};
+use rand::prelude::SliceRandom;
 use std::{
 	ffi::{CStr, CString},
 	mem,
+	path::Path,
 };
 
 fn main() -> Result<(), anyhow::Error> {
@@ -37,60 +40,203 @@ fn main() -> Result<(), anyhow::Error> {
 
 	// Then create the window state
 	let mut window_state = x::XWindowState::new(window).context("Unable to initialize open-gl context")?;
+	let [window_width, window_height] = window_state.size();
 
 	// Compile the shaders into a program
-	let program = create_program()?;
+	let program = self::create_program()?;
 
-	// Create the textures
-	let cur_tex;
-	let next_tex;
-	let cur_image;
+	// Create the vao
+	let indices = [0, 1, 3, 0, 2, 3];
+	let (vertex_buffer, vao) = self::create_vao(&indices);
+
+	// Create the tex
+	let tex = self::create_tex(program)?;
+
+	// Get all paths and shuffle them
+	let mut paths = std::fs::read_dir("/home/filipe/.wallpaper/active")
+		.context("Unable to read directory")?
+		.map(|entry| entry.map(|entry| entry.path()))
+		.collect::<Result<Vec<_>, _>>()
+		.context("Unable to read entries")?;
+	log::info!("Found {} images", paths.len());
+	paths.shuffle(&mut rand::thread_rng());
+
+	// Update the texture
+	let mut cur_path = 0;
+	let (mut dir, mut tex_offset, mut max) = self::setup_new_image(
+		&paths[cur_path],
+		window_width,
+		window_height,
+		vertex_buffer,
+		rand::random(),
+	)?;
+	cur_path += 1;
+
+	// Main Loop
+	loop {
+		// Check for events
+		window_state.process_events();
+
+		// Then draw
+		unsafe {
+			gl::ClearColor(0.0, 0.0, 0.0, 1.0);
+			gl::Clear(gl::COLOR_BUFFER_BIT | gl::STENCIL_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
+
+			gl::ActiveTexture(gl::TEXTURE0);
+			gl::BindTexture(gl::TEXTURE_2D, tex);
+
+			gl::UseProgram(program);
+			gl::Uniform2f(
+				gl::GetUniformLocation(program, b"tex_offset\0".as_ptr() as *const _),
+				tex_offset[0],
+				tex_offset[1],
+			);
+
+			gl::BindVertexArray(vao);
+			gl::DrawElements(gl::TRIANGLES, 6, gl::UNSIGNED_INT, std::ptr::null_mut());
+			gl::BindVertexArray(0);
+
+			tex_offset[0] += dir[0] * 0.002;
+			tex_offset[1] += dir[1] * 0.002;
+
+			if (max[0] != 0.0 && (tex_offset[0] <= 0.0 || tex_offset[0] >= max[0])) ||
+				(max[1] != 0.0 && (tex_offset[1] <= 0.0 || tex_offset[1] >= max[1]))
+			{
+				// If we hit the end, shuffle again
+				if cur_path >= paths.len() {
+					paths.shuffle(&mut rand::thread_rng());
+					cur_path = 0;
+				}
+
+				(dir, tex_offset, max) = self::setup_new_image(
+					&paths[cur_path],
+					window_width,
+					window_height,
+					vertex_buffer,
+					rand::random(),
+				)?;
+				cur_path += 1;
+			}
+
+			window_state.swap_buffers();
+		}
+	}
+}
+
+/// Opens and setups a new image
+#[allow(clippy::type_complexity)] // TODO
+fn setup_new_image(
+	path: impl AsRef<Path>, window_width: u32, window_height: u32, vertex_buffer: u32, swap_dir: bool,
+) -> Result<([f32; 2], [f32; 2], [f32; 2]), anyhow::Error> {
+	// Open the image, resizing it to it's max
+	// TODO: Resize before opening with a custom generic image view
+	let image_reader = image::io::Reader::open(path)
+		.context("Unable to open image")?
+		.with_guessed_format()
+		.context("Unable to parse image")?;
+	let image = image_reader.decode().context("Unable to decode image")?.flipv();
+
+	let (resize_width, resize_height) = match image.width() >= image.height() {
+		true => match image.height() >= window_height {
+			true => (image.width() * window_height / image.height(), window_height),
+			false => (image.width(), image.height()),
+		},
+		false => match image.width() >= window_width {
+			true => (window_width, image.height() * window_width / image.width()),
+			false => (image.width(), image.height()),
+		},
+	};
+
+	let image = image.thumbnail_exact(resize_width, resize_height).to_rgba8();
+
+	// And update our texture
+	self::update_tex(&image);
+
+	// Then create the uvs
+	let (uvs, dir, tex_offset, max) = self::create_uvs(
+		image.width() as f32,
+		image.height() as f32,
+		window_width as f32,
+		window_height as f32,
+		swap_dir,
+	);
+
+	// And update the vertices
+	#[rustfmt::skip]
+	let vertices: [f32; 16] = [
+		// Vertex  /   Uvs
+		-1.0, -1.0,  0.0   , 0.0,
+		 1.0, -1.0,  uvs[0], 0.0,
+		-1.0,  1.0,  0.0   , uvs[1],
+		 1.0,  1.0,  uvs[0], uvs[1],
+	];
+	self::update_vertices(vertex_buffer, &vertices);
+	Ok((dir, tex_offset, max))
+}
+
+/// Loads an image and sets it as the current texture
+#[allow(clippy::type_complexity)] // TODO
+fn create_tex(program: u32) -> Result<u32, anyhow::Error> {
 	unsafe {
-		let mut texs = [0; 2];
-		gl::GenTextures(2, texs.as_mut_ptr());
-		[cur_tex, next_tex] = texs;
+		let mut tex = 0;
+		gl::GenTextures(2, &mut tex);
 
-		gl::BindTexture(gl::TEXTURE_2D, cur_tex);
+		gl::BindTexture(gl::TEXTURE_2D, tex);
+		gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE as i32);
+		gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::CLAMP_TO_EDGE as i32);
 		gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR as i32);
 		gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR as i32);
 
-		cur_image = image::open("/home/filipe/.wallpaper/active/34.png")
-			.context("Unable to open image")?
-			.flipv()
-			.to_rgba8();
+		gl::UseProgram(program);
+		gl::Uniform1i(gl::GetUniformLocation(program, b"tex\0".as_ptr() as *const i8), 0);
 
+		Ok(tex)
+	}
+}
+
+/// Updates a texture
+fn update_tex(image: &ImageBuffer<Rgba<u8>, Vec<u8>>) {
+	unsafe {
 		gl::TexImage2D(
 			gl::TEXTURE_2D,
 			0,
 			gl::RGBA as i32,
-			cur_image.width() as i32,
-			cur_image.height() as i32,
+			image.width() as i32,
+			image.height() as i32,
 			0,
 			gl::RGBA,
 			gl::UNSIGNED_BYTE,
-			cur_image.as_ptr() as *const _,
+			image.as_ptr() as *const _,
 		);
 		gl::GenerateMipmap(gl::TEXTURE_2D);
-
-		gl::UseProgram(program);
-		gl::Uniform1i(gl::GetUniformLocation(program, b"cur_tex\0".as_ptr() as *const i8), 0);
-		gl::Uniform1i(gl::GetUniformLocation(program, b"next_tex\0".as_ptr() as *const i8), 1);
 	}
+}
 
-	let cur_image_ar = cur_image.height() as f32 / cur_image.width() as f32;
+/// Creates the uvs for an image
+fn create_uvs(
+	image_width: f32, image_height: f32, window_width: f32, window_height: f32, swap_dir: bool,
+) -> ([f32; 2], [f32; 2], [f32; 2], [f32; 2]) {
+	let (uvs, mut dir) = match image_width >= image_height {
+		true => ([(window_width / image_width) / (window_height / image_height), 1.0], [
+			1.0, 0.0,
+		]),
+		false => ([1.0, (window_height / image_height) / (window_width / image_width)], [
+			0.0, 1.0,
+		]),
+	};
+	let mut tex_offset: [f32; 2] = [0.0; 2];
+	let max = [1.0 - uvs[0], 1.0 - uvs[1]];
+	if swap_dir {
+		dir[0] = -dir[0];
+		dir[1] = -dir[1];
+		tex_offset[0] = max[0];
+		tex_offset[1] = max[1];
+	}
+	(uvs, dir, tex_offset, max)
+}
 
-	#[rustfmt::skip]
-	let vertices: [f32; 16] = [
-		// Vertex  /   Uvs
-		-1.0, -2.0 * cur_image_ar,  0.0, 0.0,
-		 1.0, -2.0 * cur_image_ar,  1.0, 0.0,
-		-1.0,  2.0 * cur_image_ar,  0.0, 1.0,
-		 1.0,  2.0 * cur_image_ar,  1.0, 1.0,
-	];
-
-	let indices = [0, 1, 3, 0, 2, 3];
-
-	// Create the vao and vertex buffers
+/// Creates the vao with the buffers
+fn create_vao(indices: &[i32]) -> (u32, u32) {
 	let mut vao = 0;
 	let vertex_buffer;
 	let index_buffer;
@@ -101,14 +247,6 @@ fn main() -> Result<(), anyhow::Error> {
 		[vertex_buffer, index_buffer] = buffers;
 
 		gl::BindVertexArray(vao);
-		gl::BindBuffer(gl::ARRAY_BUFFER, vertex_buffer);
-		gl::BufferData(
-			gl::ARRAY_BUFFER,
-			(mem::size_of::<f32>() * vertices.len()) as isize,
-			vertices.as_ptr() as *const _,
-			gl::STATIC_DRAW,
-		);
-
 		gl::BindBuffer(gl::ELEMENT_ARRAY_BUFFER, index_buffer);
 		gl::BufferData(
 			gl::ELEMENT_ARRAY_BUFFER,
@@ -117,6 +255,7 @@ fn main() -> Result<(), anyhow::Error> {
 			gl::STATIC_DRAW,
 		);
 
+		gl::BindBuffer(gl::ARRAY_BUFFER, vertex_buffer);
 		gl::VertexAttribPointer(
 			0,
 			2,
@@ -140,41 +279,19 @@ fn main() -> Result<(), anyhow::Error> {
 		gl::BindBuffer(gl::ARRAY_BUFFER, 0);
 		gl::BindVertexArray(0);
 	}
+	(vertex_buffer, vao)
+}
 
-	// Main Loop
-	let mut progress: f32 = 0.0;
-	loop {
-		// Check for events
-		window_state.process_events();
-
-		// Then draw
-		unsafe {
-			gl::ClearColor(0.0, 0.0, 0.0, 1.0);
-			gl::Clear(gl::COLOR_BUFFER_BIT | gl::STENCIL_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
-
-			gl::ActiveTexture(gl::TEXTURE0);
-			gl::BindTexture(gl::TEXTURE_2D, cur_tex);
-			gl::ActiveTexture(gl::TEXTURE1);
-			gl::BindTexture(gl::TEXTURE_2D, next_tex);
-
-			gl::UseProgram(program);
-			gl::Uniform1f(
-				gl::GetUniformLocation(program, b"progress\0".as_ptr() as *const _),
-				progress,
-			);
-
-			gl::BindVertexArray(vao);
-			gl::DrawElements(gl::TRIANGLES, 6, gl::UNSIGNED_INT, std::ptr::null_mut());
-			gl::BindVertexArray(0);
-
-			if progress >= 2.0 * cur_image_ar {
-				progress = -2.0 * cur_image_ar;
-			} else {
-				progress += cur_image_ar / 60.0 / 10.0;
-			}
-
-			window_state.swap_buffers();
-		}
+/// Updates the vertices
+fn update_vertices(vertex_buffer: u32, vertices: &[f32]) {
+	unsafe {
+		gl::BindBuffer(gl::ARRAY_BUFFER, vertex_buffer);
+		gl::BufferData(
+			gl::ARRAY_BUFFER,
+			(mem::size_of::<f32>() * vertices.len()) as isize,
+			vertices.as_ptr() as *const _,
+			gl::STATIC_DRAW,
+		);
 	}
 }
 
