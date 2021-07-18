@@ -77,28 +77,34 @@ impl Vao {
 
 	/// Executes code with this vao bound
 	pub fn with_bound<T>(&self, f: impl FnOnce() -> T) -> T {
-		// Bind ourselves
-		unsafe { gl::BindVertexArray(self.id) };
+		// Bind ourselves and the vertex buffer
+		unsafe {
+			gl::BindVertexArray(self.id);
+			gl::BindBuffer(gl::ARRAY_BUFFER, self.vertex_buffer_id);
+		}
+
 
 		// Execute
 		let value = f();
 
-		// Unbind ourselves
-		unsafe { gl::BindVertexArray(0) };
+		// Unbind ourselves and the vertex buffer
+		unsafe {
+			gl::BindVertexArray(0);
+			gl::BindBuffer(gl::ARRAY_BUFFER, 0);
+		}
 
 		value
 	}
 
 	/// Updates the vertices
 	pub fn update_vertices(&self, vertices: &[f32]) {
-		unsafe {
-			gl::BindBuffer(gl::ARRAY_BUFFER, self.vertex_buffer_id);
+		self.with_bound(|| unsafe {
 			gl::BufferData(
 				gl::ARRAY_BUFFER,
 				mem::size_of_val(vertices) as isize,
 				vertices.as_ptr() as *const _,
 				gl::STATIC_DRAW,
 			);
-		}
+		})
 	}
 }
