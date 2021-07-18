@@ -22,7 +22,7 @@ mod window;
 use anyhow::Context;
 use image::GenericImageView;
 use rand::prelude::SliceRandom;
-use std::{mem, path::Path};
+use std::path::Path;
 use texture::Texture;
 
 use crate::{program::Program, vao::Vao};
@@ -76,9 +76,9 @@ fn main() -> Result<(), anyhow::Error> {
 	let (mut dir, mut tex_offset, mut max) = self::setup_new_image(
 		&paths[cur_path],
 		&tex,
+		&vao,
 		window_width,
 		window_height,
-		vao.vertex_buffer_id(),
 		rand::random(),
 	)?;
 	cur_path += 1;
@@ -125,9 +125,9 @@ fn main() -> Result<(), anyhow::Error> {
 			(dir, tex_offset, max) = self::setup_new_image(
 				&paths[cur_path],
 				&tex,
+				&vao,
 				window_width,
 				window_height,
-				vao.vertex_buffer_id(),
 				rand::random(),
 			)?;
 			cur_path += 1;
@@ -141,7 +141,7 @@ fn main() -> Result<(), anyhow::Error> {
 /// Opens and setups a new image
 #[allow(clippy::type_complexity)] // TODO
 fn setup_new_image(
-	path: impl AsRef<Path>, tex: &Texture, window_width: u32, window_height: u32, vertex_buffer: u32, swap_dir: bool,
+	path: impl AsRef<Path>, tex: &Texture, vao: &Vao, window_width: u32, window_height: u32, swap_dir: bool,
 ) -> Result<([f32; 2], [f32; 2], [f32; 2]), anyhow::Error> {
 	// Open the image, resizing it to it's max
 	// TODO: Resize before opening with a custom generic image view
@@ -185,7 +185,8 @@ fn setup_new_image(
 		-1.0,  1.0,  0.0   , uvs[1],
 		 1.0,  1.0,  uvs[0], uvs[1],
 	];
-	self::update_vertices(vertex_buffer, &vertices);
+	vao.update_vertices(&vertices);
+
 	Ok((dir, tex_offset, max))
 }
 
@@ -210,17 +211,4 @@ fn create_uvs(
 		tex_offset[1] = max[1];
 	}
 	(uvs, dir, tex_offset, max)
-}
-
-/// Updates the vertices
-fn update_vertices(vertex_buffer: u32, vertices: &[f32]) {
-	unsafe {
-		gl::BindBuffer(gl::ARRAY_BUFFER, vertex_buffer);
-		gl::BufferData(
-			gl::ARRAY_BUFFER,
-			(mem::size_of::<f32>() * vertices.len()) as isize,
-			vertices.as_ptr() as *const _,
-			gl::STATIC_DRAW,
-		);
-	}
 }

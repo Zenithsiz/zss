@@ -89,8 +89,16 @@ impl Vao {
 		value
 	}
 
-	/// Returns the vertex buffer id
-	pub fn vertex_buffer_id(&self) -> u32 {
-		self.vertex_buffer_id
+	/// Updates the vertices
+	pub fn update_vertices(&self, vertices: &[f32]) {
+		unsafe {
+			gl::BindBuffer(gl::ARRAY_BUFFER, self.vertex_buffer_id);
+			gl::BufferData(
+				gl::ARRAY_BUFFER,
+				mem::size_of_val(vertices) as isize,
+				vertices.as_ptr() as *const _,
+				gl::STATIC_DRAW,
+			);
+		}
 	}
 }
