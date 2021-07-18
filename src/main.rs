@@ -93,46 +93,48 @@ fn main() -> Result<(), anyhow::Error> {
 		unsafe {
 			gl::ClearColor(0.0, 0.0, 0.0, 1.0);
 			gl::Clear(gl::COLOR_BUFFER_BIT | gl::STENCIL_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
+		}
 
-			program.use_program();
-			gl::Uniform2f(tex_offset_location, tex_offset[0], tex_offset[1]);
-
-			vao.bind();
-
-			// Draw with the texture bound
-			tex.with_bound(|| {
-				gl::ActiveTexture(gl::TEXTURE0);
-				gl::DrawElements(gl::TRIANGLES, 6, gl::UNSIGNED_INT, std::ptr::null_mut());
-			});
-
-			gl::BindVertexArray(0);
-
-
-			tex_offset[0] += dir[0] * 0.002;
-			tex_offset[1] += dir[1] * 0.002;
-
-			if (max[0] != 0.0 && (tex_offset[0] <= 0.0 || tex_offset[0] >= max[0])) ||
-				(max[1] != 0.0 && (tex_offset[1] <= 0.0 || tex_offset[1] >= max[1]))
-			{
-				// If we hit the end, shuffle again
-				if cur_path >= paths.len() {
-					paths.shuffle(&mut rand::thread_rng());
-					cur_path = 0;
-				}
-
-				(dir, tex_offset, max) = self::setup_new_image(
-					&paths[cur_path],
-					&tex,
-					window_width,
-					window_height,
-					vao.vertex_buffer_id(),
-					rand::random(),
-				)?;
-				cur_path += 1;
+		program.with_using(|| {
+			// Update the texture offset
+			unsafe {
+				gl::Uniform2f(tex_offset_location, tex_offset[0], tex_offset[1]);
 			}
 
-			window_state.swap_buffers();
+			// Then bind the vao and texture and draw
+			vao.with_bound(|| {
+				tex.with_bound(|| unsafe {
+					gl::ActiveTexture(gl::TEXTURE0);
+					gl::DrawElements(gl::TRIANGLES, 6, gl::UNSIGNED_INT, std::ptr::null_mut());
+				});
+			});
+		});
+
+		tex_offset[0] += dir[0] * 0.002;
+		tex_offset[1] += dir[1] * 0.002;
+
+		if (max[0] != 0.0 && (tex_offset[0] <= 0.0 || tex_offset[0] >= max[0])) ||
+			(max[1] != 0.0 && (tex_offset[1] <= 0.0 || tex_offset[1] >= max[1]))
+		{
+			// If we hit the end, shuffle again
+			if cur_path >= paths.len() {
+				paths.shuffle(&mut rand::thread_rng());
+				cur_path = 0;
+			}
+
+			(dir, tex_offset, max) = self::setup_new_image(
+				&paths[cur_path],
+				&tex,
+				window_width,
+				window_height,
+				vao.vertex_buffer_id(),
+				rand::random(),
+			)?;
+			cur_path += 1;
 		}
+
+		// Then swap buffers
+		window_state.swap_buffers();
 	}
 }
 

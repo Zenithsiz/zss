@@ -109,12 +109,18 @@ impl Program {
 		Ok(Self { id })
 	}
 
-	/// Uses this program
-	// TODO: Make this RAII
-	pub fn use_program(&self) {
-		unsafe {
-			gl::UseProgram(self.id);
-		}
+	/// Executes code with this program being used
+	pub fn with_using<T>(&self, f: impl FnOnce() -> T) -> T {
+		// Use this program
+		unsafe { gl::UseProgram(self.id) };
+
+		// Execute
+		let value = f();
+
+		// Un-use this program
+		unsafe { gl::UseProgram(0) };
+
+		value
 	}
 
 	/// Returns a uniform location

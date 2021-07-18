@@ -75,11 +75,18 @@ impl Vao {
 		Self { id, vertex_buffer_id }
 	}
 
-	/// Binds this vao
-	pub fn bind(&self) {
-		unsafe {
-			gl::BindVertexArray(self.id);
-		}
+	/// Executes code with this vao bound
+	pub fn with_bound<T>(&self, f: impl FnOnce() -> T) -> T {
+		// Bind ourselves
+		unsafe { gl::BindVertexArray(self.id) };
+
+		// Execute
+		let value = f();
+
+		// Unbind ourselves
+		unsafe { gl::BindVertexArray(0) };
+
+		value
 	}
 
 	/// Returns the vertex buffer id
