@@ -34,20 +34,24 @@ impl Texture {
 		Self { id }
 	}
 
-	/// Binds this texture
-	pub fn bind(&self) {
-		unsafe {
-			gl::BindTexture(gl::TEXTURE_2D, self.id);
-		}
+	/// Executes code with this texture bound
+	pub fn with_bound<T>(&self, f: impl FnOnce() -> T) -> T {
+		// Bind ourselves
+		unsafe { gl::BindTexture(gl::TEXTURE_2D, self.id) };
+
+		// Execute
+		let value = f();
+
+		// And unbind ourselves
+		unsafe { gl::BindTexture(gl::TEXTURE_2D, 0) };
+
+		value
 	}
 
 	/// Updates this texture
 	pub fn update(&self, image: &ImageBuffer<Rgba<u8>, Vec<u8>>) {
-		// Bind ourselves
-		self.bind();
-
-		// Then upload and generate mip-maps
-		unsafe {
+		// With ourselves bound, upload and generate mip-maps
+		self.with_bound(|| unsafe {
 			gl::TexImage2D(
 				gl::TEXTURE_2D,
 				0,
@@ -60,6 +64,6 @@ impl Texture {
 				image.as_ptr() as *const _,
 			);
 			gl::GenerateMipmap(gl::TEXTURE_2D);
-		}
+		});
 	}
 }

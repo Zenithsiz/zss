@@ -94,15 +94,19 @@ fn main() -> Result<(), anyhow::Error> {
 			gl::ClearColor(0.0, 0.0, 0.0, 1.0);
 			gl::Clear(gl::COLOR_BUFFER_BIT | gl::STENCIL_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
 
-			gl::ActiveTexture(gl::TEXTURE0);
-			tex.bind();
-
 			program.use_program();
 			gl::Uniform2f(tex_offset_location, tex_offset[0], tex_offset[1]);
 
 			vao.bind();
-			gl::DrawElements(gl::TRIANGLES, 6, gl::UNSIGNED_INT, std::ptr::null_mut());
+
+			// Draw with the texture bound
+			tex.with_bound(|| {
+				gl::ActiveTexture(gl::TEXTURE0);
+				gl::DrawElements(gl::TRIANGLES, 6, gl::UNSIGNED_INT, std::ptr::null_mut());
+			});
+
 			gl::BindVertexArray(0);
+
 
 			tex_offset[0] += dir[0] * 0.002;
 			tex_offset[1] += dir[1] * 0.002;
