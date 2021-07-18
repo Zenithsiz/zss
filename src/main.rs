@@ -11,7 +11,8 @@
 #![warn(unsafe_op_in_unsafe_fn)]
 
 // Modules
-pub mod window;
+mod texture;
+mod window;
 
 // Imports
 use anyhow::Context;
@@ -22,6 +23,7 @@ use std::{
 	mem,
 	path::Path,
 };
+use texture::Texture;
 
 fn main() -> Result<(), anyhow::Error> {
 	// Initialize logger
@@ -52,7 +54,8 @@ fn main() -> Result<(), anyhow::Error> {
 	let (vertex_buffer, vao) = self::create_vao(&indices);
 
 	// Create the tex
-	let tex = self::create_tex(program)?;
+	let tex = Texture::new();
+
 
 	// Get all paths and shuffle them
 	let mut paths = std::fs::read_dir("/home/filipe/.wallpaper/active")
@@ -85,7 +88,7 @@ fn main() -> Result<(), anyhow::Error> {
 			gl::Clear(gl::COLOR_BUFFER_BIT | gl::STENCIL_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
 
 			gl::ActiveTexture(gl::TEXTURE0);
-			gl::BindTexture(gl::TEXTURE_2D, tex);
+			tex.bind();
 
 			gl::UseProgram(program);
 			gl::Uniform2f(
@@ -174,26 +177,6 @@ fn setup_new_image(
 	];
 	self::update_vertices(vertex_buffer, &vertices);
 	Ok((dir, tex_offset, max))
-}
-
-/// Loads an image and sets it as the current texture
-#[allow(clippy::type_complexity)] // TODO
-fn create_tex(program: u32) -> Result<u32, anyhow::Error> {
-	unsafe {
-		let mut tex = 0;
-		gl::GenTextures(2, &mut tex);
-
-		gl::BindTexture(gl::TEXTURE_2D, tex);
-		gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE as i32);
-		gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::CLAMP_TO_EDGE as i32);
-		gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR as i32);
-		gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR as i32);
-
-		gl::UseProgram(program);
-		gl::Uniform1i(gl::GetUniformLocation(program, b"tex\0".as_ptr() as *const i8), 0);
-
-		Ok(tex)
-	}
 }
 
 /// Updates a texture
@@ -381,6 +364,12 @@ fn create_program() -> Result<u32, anyhow::Error> {
 	unsafe {
 		gl::DeleteShader(vertex_shader);
 		gl::DeleteShader(frag_shader);
+	}
+
+	// Set the tex sampler to texture 0.
+	unsafe {
+		gl::UseProgram(program);
+		gl::Uniform1i(gl::GetUniformLocation(program, b"tex\0".as_ptr() as *const i8), 0);
 	}
 
 	Ok(program)
