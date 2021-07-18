@@ -27,4 +27,7 @@ anyhow = "1.0.40"
 log = "0.4.14"
 simplelog = "0.10.0"
 
+# Cmd
+clap = "2.33.3"
+
 # Util

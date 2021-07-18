@@ -14,6 +14,7 @@
 #![warn(unsafe_op_in_unsafe_fn)]
 
 // Modules
+mod args;
 mod images;
 mod program;
 mod texture;
@@ -24,6 +25,7 @@ mod window;
 // Imports
 use crate::{images::Images, program::Program, vao::Vao};
 use anyhow::Context;
+use args::Args;
 use image::{ImageBuffer, Rgba};
 use texture::Texture;
 use uvs::Uvs;
@@ -38,15 +40,12 @@ fn main() -> Result<(), anyhow::Error> {
 	)
 	.expect("Unable to initialize logger");
 
-	// Get the window from arguments
-	let window = std::env::args().nth(1).context("Must supply window id")?;
-	log::info!("Found window id {window}");
-	anyhow::ensure!(window.starts_with("0x"), "Window id didn't start with `0x`");
-	let window = u64::from_str_radix(&window[2..], 16).context("Unable to parse window id")?;
+	// Get arguments
+	let args = Args::new().context("Unable to retrieve arguments")?;
 
 	// Then create the window state
 	let mut window_state =
-		unsafe { window::Window::from_window_id(window) }.context("Unable to initialize open-gl context")?;
+		unsafe { window::Window::from_window_id(args.window_id) }.context("Unable to initialize open-gl context")?;
 	let [window_width, window_height] = window_state.size();
 
 	// Load all images
@@ -118,7 +117,7 @@ fn main() -> Result<(), anyhow::Error> {
 			});
 		});
 
-		progress += 1.0 / 60.0 / 30.0;
+		progress += 1.0 / 60.0 / args.duration.as_secs_f32();
 
 		// Finally swap buffers
 		window_state.swap_buffers();
