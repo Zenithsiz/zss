@@ -15,6 +15,7 @@
 // Modules
 mod program;
 mod texture;
+mod uvs;
 mod vao;
 mod window;
 
@@ -24,6 +25,7 @@ use image::GenericImageView;
 use rand::prelude::SliceRandom;
 use std::path::Path;
 use texture::Texture;
+use uvs::Uvs;
 
 use crate::{program::Program, vao::Vao};
 
@@ -73,7 +75,7 @@ fn main() -> Result<(), anyhow::Error> {
 
 	// Update the texture
 	let mut cur_path = 0;
-	let (mut dir, mut tex_offset, mut max) = self::setup_new_image(
+	let mut uvs = self::setup_new_image(
 		&paths[cur_path],
 		&tex,
 		&vao,
@@ -85,18 +87,21 @@ fn main() -> Result<(), anyhow::Error> {
 
 
 	// Main Loop
+	let mut progress = 0.0;
 	loop {
 		// Check for events
 		window_state.process_events();
 
-		// Then draw
+		// Clear
 		unsafe {
 			gl::ClearColor(0.0, 0.0, 0.0, 1.0);
 			gl::Clear(gl::COLOR_BUFFER_BIT | gl::STENCIL_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
 		}
 
+		// And draw
 		program.with_using(|| {
 			// Update the texture offset
+			let tex_offset = uvs.offset(progress);
 			unsafe {
 				gl::Uniform2f(tex_offset_location, tex_offset[0], tex_offset[1]);
 			}
@@ -110,19 +115,16 @@ fn main() -> Result<(), anyhow::Error> {
 			});
 		});
 
-		tex_offset[0] += dir[0] * 0.002;
-		tex_offset[1] += dir[1] * 0.002;
+		progress += 0.01;
 
-		if (max[0] != 0.0 && (tex_offset[0] <= 0.0 || tex_offset[0] >= max[0])) ||
-			(max[1] != 0.0 && (tex_offset[1] <= 0.0 || tex_offset[1] >= max[1]))
-		{
+		if progress >= 1.0 {
 			// If we hit the end, shuffle again
 			if cur_path >= paths.len() {
 				paths.shuffle(&mut rand::thread_rng());
 				cur_path = 0;
 			}
 
-			(dir, tex_offset, max) = self::setup_new_image(
+			uvs = self::setup_new_image(
 				&paths[cur_path],
 				&tex,
 				&vao,
@@ -131,9 +133,11 @@ fn main() -> Result<(), anyhow::Error> {
 				rand::random(),
 			)?;
 			cur_path += 1;
+
+			progress = 0.0;
 		}
 
-		// Then swap buffers
+		// Finally swap buffers
 		window_state.swap_buffers();
 	}
 }
@@ -142,7 +146,7 @@ fn main() -> Result<(), anyhow::Error> {
 #[allow(clippy::type_complexity)] // TODO
 fn setup_new_image(
 	path: impl AsRef<Path>, tex: &Texture, vao: &Vao, window_width: u32, window_height: u32, swap_dir: bool,
-) -> Result<([f32; 2], [f32; 2], [f32; 2]), anyhow::Error> {
+) -> Result<Uvs, anyhow::Error> {
 	// Open the image, resizing it to it's max
 	// TODO: Resize before opening with a custom generic image view
 	let image_reader = image::io::Reader::open(path)
@@ -168,7 +172,7 @@ fn setup_new_image(
 	tex.update(&image);
 
 	// Then create the uvs
-	let (uvs, dir, tex_offset, max) = self::create_uvs(
+	let uvs = Uvs::new(
 		image.width() as f32,
 		image.height() as f32,
 		window_width as f32,
@@ -177,38 +181,16 @@ fn setup_new_image(
 	);
 
 	// And update the vertices
+	let start_uvs = uvs.start();
 	#[rustfmt::skip]
 	let vertices: [f32; 16] = [
 		// Vertex  /   Uvs
-		-1.0, -1.0,  0.0   , 0.0,
-		 1.0, -1.0,  uvs[0], 0.0,
-		-1.0,  1.0,  0.0   , uvs[1],
-		 1.0,  1.0,  uvs[0], uvs[1],
+		-1.0, -1.0,  0.0         , 0.0,
+		 1.0, -1.0,  start_uvs[0], 0.0,
+		-1.0,  1.0,  0.0         , start_uvs[1],
+		 1.0,  1.0,  start_uvs[0], start_uvs[1],
 	];
 	vao.update_vertices(&vertices);
 
-	Ok((dir, tex_offset, max))
-}
-
-/// Creates the uvs for an image
-fn create_uvs(
-	image_width: f32, image_height: f32, window_width: f32, window_height: f32, swap_dir: bool,
-) -> ([f32; 2], [f32; 2], [f32; 2], [f32; 2]) {
-	let (uvs, mut dir) = match image_width >= image_height {
-		true => ([(window_width / image_width) / (window_height / image_height), 1.0], [
-			1.0, 0.0,
-		]),
-		false => ([1.0, (window_height / image_height) / (window_width / image_width)], [
-			0.0, 1.0,
-		]),
-	};
-	let mut tex_offset: [f32; 2] = [0.0; 2];
-	let max = [1.0 - uvs[0], 1.0 - uvs[1]];
-	if swap_dir {
-		dir[0] = -dir[0];
-		dir[1] = -dir[1];
-		tex_offset[0] = max[0];
-		tex_offset[1] = max[1];
-	}
-	(uvs, dir, tex_offset, max)
+	Ok(uvs)
 }
