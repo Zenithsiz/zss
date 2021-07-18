@@ -1,3 +1,6 @@
+//! Zss
+
+// Features
 #![feature(
 	raw_ref_op,
 	format_args_capture,
@@ -6,15 +9,15 @@
 	destructuring_assignment
 )]
 
+// Modules
+pub mod x;
+
+// Imports
+use anyhow::Context;
 use std::{
 	ffi::{CStr, CString},
-	mem::{self, MaybeUninit},
-	os::raw::c_int,
-	sync::atomic::{self, AtomicI32},
+	mem,
 };
-
-use anyhow::Context;
-use x11::{glx, xlib};
 
 fn main() -> Result<(), anyhow::Error> {
 	// Initialize logger
@@ -32,105 +35,8 @@ fn main() -> Result<(), anyhow::Error> {
 	anyhow::ensure!(window.starts_with("0x"), "Window id didn't start with `0x`");
 	let window = u64::from_str_radix(&window[2..], 16).context("Unable to parse window id")?;
 
-	// Get the display and screen
-	let display = unsafe { xlib::XOpenDisplay(std::ptr::null()) };
-	let screen = unsafe { xlib::XDefaultScreen(display) };
-
-	// Get the window attributes
-	let mut window_attrs: xlib::XWindowAttributes = unsafe { MaybeUninit::zeroed().assume_init() };
-	unsafe { xlib::XGetWindowAttributes(display, window, &mut window_attrs) };
-
-	// Get the frame-buffer configs
-	#[rustfmt::skip]
-	let fb_config_attributes = [
-		glx::GLX_RENDER_TYPE  , glx::GLX_RGBA_BIT,
-		glx::GLX_DRAWABLE_TYPE, glx::GLX_PBUFFER_BIT,
-		glx::GLX_DOUBLEBUFFER , xlib::True,
-		glx::GLX_RED_SIZE     , 8,
-		glx::GLX_GREEN_SIZE   , 8,
-		glx::GLX_BLUE_SIZE    , 8,
-		glx::GLX_ALPHA_SIZE   , 8,
-		glx::GLX_DEPTH_SIZE   , 16,
-		glx::GLX_NONE,
-	];
-	let fb_configs_len = AtomicI32::new(0);
-	let fb_configs = unsafe {
-		glx::glXChooseFBConfig(
-			display,
-			screen,
-			&fb_config_attributes as *const i32,
-			fb_configs_len.as_mut_ptr(),
-		)
-	};
-	let fb_configs_len = fb_configs_len.load(atomic::Ordering::Acquire);
-	log::info!("Found {fb_configs_len} frame-buffer configurations");
-
-	// Then select the first one we find
-	// TODO: Maybe pick one based on something?
-	anyhow::ensure!(!fb_configs.is_null() && fb_configs_len != 0, "No fg configs found");
-	let fb_config = unsafe { *fb_configs };
-
-	// Create the gl context and make it current
-	let create_gl_context = unsafe { glx::glXGetProcAddressARB(b"glXCreateContextAttribsARB\0" as *const _) }
-		.context("Unable to get function")?;
-	let create_gl_context: unsafe fn(
-		*mut xlib::Display,
-		glx::GLXFBConfig,
-		glx::GLXContext,
-		xlib::Bool,
-		*const c_int,
-	) -> glx::GLXContext = unsafe { mem::transmute(create_gl_context) };
-
-	#[rustfmt::skip]
-	let gl_attrs = [
-		0x2091, 3,
-		0x2092, 0,
-		0x2094, 0x2,
-		0x9126, 0x1,
-		0, 0
-	];
-	let gl_context =
-		unsafe { create_gl_context(display, fb_config, std::ptr::null_mut(), xlib::True, gl_attrs.as_ptr()) };
-
-	anyhow::ensure!(!gl_context.is_null(), "Unable to get gl context");
-	unsafe {
-		log::info!("Making context {gl_context:?} current");
-		anyhow::ensure!(
-			glx::glXMakeContextCurrent(display, window, window, gl_context) == 1,
-			"Failed to make context current"
-		);
-	}
-
-	// Load all gl functions
-	unsafe {
-		gl::load_with(|name| {
-			let name_cstr = CString::new(name).expect("Unable to create c-string from name");
-			match glx::glXGetProcAddressARB(name_cstr.as_ptr() as *const u8) {
-				Some(f) => f as *const _,
-				None => {
-					log::warn!("Unable to load {name}");
-					std::ptr::null()
-				},
-			}
-		})
-	};
-
-	// Log some info about the gl implementation
-	let gl_version = unsafe { gl::GetString(gl::VERSION) };
-	let gl_version = unsafe { CStr::from_ptr(gl_version as *const _) };
-	log::info!("Gl version: {gl_version:?}");
-
-	// Enable gl errors
-	unsafe {
-		gl::Enable(gl::DEBUG_OUTPUT);
-		gl::DebugMessageCallback(Some(gl_debug_callback), std::ptr::null());
-	}
-
-	// Setup gl
-	unsafe {
-		gl::DrawBuffer(gl::BACK);
-		gl::Viewport(0, 0, window_attrs.width, window_attrs.height);
-	}
+	// Then create the window state
+	let mut window_state = x::XWindowState::new(window).context("Unable to initialize open-gl context")?;
 
 	// Compile the shaders into a program
 	let program;
@@ -286,12 +192,7 @@ fn main() -> Result<(), anyhow::Error> {
 	let mut progress: f32 = 0.0;
 	loop {
 		// Check for events
-		while unsafe { xlib::XPending(display) } != 0 {
-			let mut event = xlib::XEvent { type_: 0 };
-			unsafe { xlib::XNextEvent(display, &mut event) };
-
-			log::warn!("Received event {event:?}");
-		}
+		window_state.process_events();
 
 		// Then draw
 		unsafe {
@@ -319,54 +220,7 @@ fn main() -> Result<(), anyhow::Error> {
 				progress += cur_image_ar / 60.0 / 10.0;
 			}
 
-			glx::glXSwapBuffers(display, window);
+			window_state.swap_buffers();
 		}
 	}
-}
-
-extern "system" fn gl_debug_callback(
-	source: u32, kind: u32, id: u32, severity: u32, length: i32, msg: *const i8, _: *mut std::ffi::c_void,
-) {
-	let msg = match length {
-		// If negative, `msg` is null-terminated
-		length if length < 0 => unsafe { CStr::from_ptr(msg).to_string_lossy() },
-		_ => {
-			let slice = unsafe { std::slice::from_raw_parts(msg as *const u8, length as usize) };
-			String::from_utf8_lossy(slice)
-		},
-	};
-
-	let source = match source {
-		gl::DEBUG_SOURCE_API => "Api",
-		gl::DEBUG_SOURCE_APPLICATION => "Application",
-		gl::DEBUG_SOURCE_OTHER => "Other",
-		gl::DEBUG_SOURCE_SHADER_COMPILER => "Shader Compiler",
-		gl::DEBUG_SOURCE_THIRD_PARTY => "Third Party",
-		gl::DEBUG_SOURCE_WINDOW_SYSTEM => "Window System",
-		_ => "<Unknown>",
-	};
-
-	// TODO: Do something about `PUSH/POP_GROUP`?
-	let kind = match kind {
-		gl::DEBUG_TYPE_DEPRECATED_BEHAVIOR => "Deprecated Behavior",
-		gl::DEBUG_TYPE_ERROR => "Error",
-		gl::DEBUG_TYPE_MARKER => "Marker",
-		gl::DEBUG_TYPE_OTHER => "Other",
-		gl::DEBUG_TYPE_PERFORMANCE => "Performance",
-		gl::DEBUG_TYPE_POP_GROUP => "Pop Group",
-		gl::DEBUG_TYPE_PORTABILITY => "Portability",
-		gl::DEBUG_TYPE_PUSH_GROUP => "Push Group",
-		gl::DEBUG_TYPE_UNDEFINED_BEHAVIOR => "Undefined Behavior",
-		_ => "<Unknown>",
-	};
-
-	let log_level = match severity {
-		gl::DEBUG_SEVERITY_HIGH => log::Level::Error,
-		gl::DEBUG_SEVERITY_LOW => log::Level::Info,
-		gl::DEBUG_SEVERITY_MEDIUM => log::Level::Warn,
-		gl::DEBUG_SEVERITY_NOTIFICATION => log::Level::Debug,
-		_ => log::Level::Trace,
-	};
-
-	log::log!(log_level, "[{source}]:[{kind}]:{id}: {msg}");
 }
