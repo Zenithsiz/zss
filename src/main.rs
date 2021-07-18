@@ -8,11 +8,13 @@
 	bindings_after_at,
 	destructuring_assignment,
 	maybe_uninit_uninit_array,
-	maybe_uninit_array_assume_init
+	maybe_uninit_array_assume_init,
+	try_blocks
 )]
 #![warn(unsafe_op_in_unsafe_fn)]
 
 // Modules
+mod images;
 mod program;
 mod texture;
 mod uvs;
@@ -20,14 +22,11 @@ mod vao;
 mod window;
 
 // Imports
+use crate::{images::Images, program::Program, vao::Vao};
 use anyhow::Context;
-use image::GenericImageView;
-use rand::prelude::SliceRandom;
-use std::path::Path;
+use image::{ImageBuffer, Rgba};
 use texture::Texture;
 use uvs::Uvs;
-
-use crate::{program::Program, vao::Vao};
 
 fn main() -> Result<(), anyhow::Error> {
 	// Initialize logger
@@ -50,6 +49,9 @@ fn main() -> Result<(), anyhow::Error> {
 		unsafe { window::Window::from_window_id(window) }.context("Unable to initialize open-gl context")?;
 	let [window_width, window_height] = window_state.size();
 
+	// Load all images
+	let images = Images::new(window_width, window_height).context("Unable to load images")?;
+
 	// Compile the shaders into a program
 	let program = Program::new().context("Unable to create program")?;
 
@@ -64,33 +66,34 @@ fn main() -> Result<(), anyhow::Error> {
 	// Create the texture
 	let tex = Texture::new();
 
-	// Get all paths and shuffle them
-	let mut paths = std::fs::read_dir("/home/filipe/.wallpaper/active")
-		.context("Unable to read directory")?
-		.map(|entry| entry.map(|entry| entry.path()))
-		.collect::<Result<Vec<_>, _>>()
-		.context("Unable to read entries")?;
-	log::info!("Found {} images", paths.len());
-	paths.shuffle(&mut rand::thread_rng());
-
-	// Update the texture
-	let mut cur_path = 0;
-	let mut uvs = self::setup_new_image(
-		&paths[cur_path],
-		&tex,
-		&vao,
-		window_width,
-		window_height,
-		rand::random(),
-	)?;
-	cur_path += 1;
-
-
 	// Main Loop
+	let mut uvs = None;
 	let mut progress = 0.0;
 	loop {
 		// Check for events
 		window_state.process_events();
+
+		// Get the uvs
+		let new_uvs = || {
+			self::setup_new_image(
+				images.next_image(),
+				&tex,
+				&vao,
+				window_width,
+				window_height,
+				rand::random(),
+			)
+			.context("Unable to get new image")
+		};
+		let uvs = match uvs.as_mut() {
+			// If we have none, or the current image ended
+			None => uvs.insert(new_uvs()?),
+			Some(_) if progress >= 1.0 => {
+				progress = 0.0;
+				uvs.insert(new_uvs()?)
+			},
+			Some(uvs) => uvs,
+		};
 
 		// Clear
 		unsafe {
@@ -117,25 +120,6 @@ fn main() -> Result<(), anyhow::Error> {
 
 		progress += 0.01;
 
-		if progress >= 1.0 {
-			// If we hit the end, shuffle again
-			if cur_path >= paths.len() {
-				paths.shuffle(&mut rand::thread_rng());
-				cur_path = 0;
-			}
-
-			uvs = self::setup_new_image(
-				&paths[cur_path],
-				&tex,
-				&vao,
-				window_width,
-				window_height,
-				rand::random(),
-			)?;
-			cur_path += 1;
-
-			progress = 0.0;
-		}
 
 		// Finally swap buffers
 		window_state.swap_buffers();
@@ -145,30 +129,10 @@ fn main() -> Result<(), anyhow::Error> {
 /// Opens and setups a new image
 #[allow(clippy::type_complexity)] // TODO
 fn setup_new_image(
-	path: impl AsRef<Path>, tex: &Texture, vao: &Vao, window_width: u32, window_height: u32, swap_dir: bool,
+	image: ImageBuffer<Rgba<u8>, Vec<u8>>, tex: &Texture, vao: &Vao, window_width: u32, window_height: u32,
+	swap_dir: bool,
 ) -> Result<Uvs, anyhow::Error> {
-	// Open the image, resizing it to it's max
-	// TODO: Resize before opening with a custom generic image view
-	let image_reader = image::io::Reader::open(path)
-		.context("Unable to open image")?
-		.with_guessed_format()
-		.context("Unable to parse image")?;
-	let image = image_reader.decode().context("Unable to decode image")?.flipv();
-
-	let (resize_width, resize_height) = match image.width() >= image.height() {
-		true => match image.height() >= window_height {
-			true => (image.width() * window_height / image.height(), window_height),
-			false => (image.width(), image.height()),
-		},
-		false => match image.width() >= window_width {
-			true => (window_width, image.height() * window_width / image.width()),
-			false => (image.width(), image.height()),
-		},
-	};
-
-	let image = image.thumbnail_exact(resize_width, resize_height).to_rgba8();
-
-	// And update our texture
+	// Update our texture
 	tex.update(&image);
 
 	// Then create the uvs
