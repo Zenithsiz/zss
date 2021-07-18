@@ -128,7 +128,7 @@ impl Window {
 		// And log info about which gl version we got.
 		let gl_version = unsafe { gl::GetString(gl::VERSION) };
 		let gl_version = unsafe { CStr::from_ptr(gl_version as *const _) };
-		log::debug!("Gl version: {gl_version:?}");
+		log::info!("Gl version: {gl_version:?}");
 
 		// Enable gl errors
 		unsafe {
