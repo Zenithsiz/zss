@@ -3,7 +3,7 @@
 // Imports
 use anyhow::Context;
 use clap::{App as ClapApp, Arg as ClapArg};
-use std::time::Duration;
+use std::{path::PathBuf, time::Duration};
 
 /// Args
 pub struct Args {
@@ -12,6 +12,9 @@ pub struct Args {
 
 	/// Duration
 	pub duration: Duration,
+
+	/// Images directory
+	pub images_dir: PathBuf,
 }
 
 impl Args {
@@ -19,6 +22,7 @@ impl Args {
 	pub fn new() -> Result<Self, anyhow::Error> {
 		const WINDOW_ID_STR: &str = "window-id";
 		const DURATION_STR: &str = "duration";
+		const IMAGES_DIR_STR: &str = "images-dir";
 
 		// Get all matches from cli
 		let matches = ClapApp::new("Zss")
@@ -28,6 +32,7 @@ impl Args {
 			.arg(
 				ClapArg::with_name(WINDOW_ID_STR)
 					.help("The window id")
+					.takes_value(true)
 					.required(true)
 					.index(1),
 			)
@@ -37,6 +42,14 @@ impl Args {
 					.takes_value(true)
 					.long("duration")
 					.short("d"),
+			)
+			.arg(
+				ClapArg::with_name(IMAGES_DIR_STR)
+					.help("Images Directory")
+					.takes_value(true)
+					.required(true)
+					.long("images-dir")
+					.short("i"),
 			)
 			.get_matches();
 
@@ -52,6 +65,16 @@ impl Args {
 			.context("Invalid duration")?
 			.map_or(Duration::from_secs(30), Duration::from_secs_f32);
 
-		Ok(Self { window_id, duration })
+		let images_dir = PathBuf::from(
+			matches
+				.value_of_os(IMAGES_DIR_STR)
+				.expect("Required argument was missing"),
+		);
+
+		Ok(Self {
+			window_id,
+			duration,
+			images_dir,
+		})
 	}
 }

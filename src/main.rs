@@ -9,7 +9,8 @@
 	destructuring_assignment,
 	maybe_uninit_uninit_array,
 	maybe_uninit_array_assume_init,
-	try_blocks
+	try_blocks,
+	drain_filter
 )]
 #![warn(unsafe_op_in_unsafe_fn)]
 
@@ -49,7 +50,7 @@ fn main() -> Result<(), anyhow::Error> {
 	let [window_width, window_height] = window_state.size();
 
 	// Load all images
-	let images = Images::new(window_width, window_height).context("Unable to load images")?;
+	let images = Images::new(&args.images_dir, window_width, window_height).context("Unable to load images")?;
 
 	// Compile the shaders into a program
 	let program = Program::new().context("Unable to create program")?;
