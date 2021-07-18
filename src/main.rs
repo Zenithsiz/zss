@@ -6,13 +6,16 @@
 	format_args_capture,
 	atomic_mut_ptr,
 	bindings_after_at,
-	destructuring_assignment
+	destructuring_assignment,
+	maybe_uninit_uninit_array,
+	maybe_uninit_array_assume_init
 )]
 #![warn(unsafe_op_in_unsafe_fn)]
 
 // Modules
 mod program;
 mod texture;
+mod vao;
 mod window;
 
 // Imports
@@ -22,7 +25,7 @@ use rand::prelude::SliceRandom;
 use std::{mem, path::Path};
 use texture::Texture;
 
-use crate::program::Program;
+use crate::{program::Program, vao::Vao};
 
 fn main() -> Result<(), anyhow::Error> {
 	// Initialize logger
@@ -54,8 +57,7 @@ fn main() -> Result<(), anyhow::Error> {
 		.context("Unable to get uniform location")?;
 
 	// Create the vao
-	let indices = [0, 1, 3, 0, 2, 3];
-	let (vertex_buffer, vao) = self::create_vao(&indices);
+	let vao = Vao::new();
 
 	// Create the texture
 	let tex = Texture::new();
@@ -75,7 +77,7 @@ fn main() -> Result<(), anyhow::Error> {
 		&paths[cur_path],
 		window_width,
 		window_height,
-		vertex_buffer,
+		vao.vertex_buffer_id(),
 		rand::random(),
 	)?;
 	cur_path += 1;
@@ -97,7 +99,7 @@ fn main() -> Result<(), anyhow::Error> {
 			program.use_program();
 			gl::Uniform2f(tex_offset_location, tex_offset[0], tex_offset[1]);
 
-			gl::BindVertexArray(vao);
+			vao.bind();
 			gl::DrawElements(gl::TRIANGLES, 6, gl::UNSIGNED_INT, std::ptr::null_mut());
 			gl::BindVertexArray(0);
 
@@ -117,7 +119,7 @@ fn main() -> Result<(), anyhow::Error> {
 					&paths[cur_path],
 					window_width,
 					window_height,
-					vertex_buffer,
+					vao.vertex_buffer_id(),
 					rand::random(),
 				)?;
 				cur_path += 1;
@@ -218,53 +220,6 @@ fn create_uvs(
 		tex_offset[1] = max[1];
 	}
 	(uvs, dir, tex_offset, max)
-}
-
-/// Creates the vao with the buffers
-fn create_vao(indices: &[i32]) -> (u32, u32) {
-	let mut vao = 0;
-	let vertex_buffer;
-	let index_buffer;
-	unsafe {
-		gl::GenVertexArrays(1, &mut vao);
-		let mut buffers = [0; 2];
-		gl::GenBuffers(2, buffers.as_mut_ptr());
-		[vertex_buffer, index_buffer] = buffers;
-
-		gl::BindVertexArray(vao);
-		gl::BindBuffer(gl::ELEMENT_ARRAY_BUFFER, index_buffer);
-		gl::BufferData(
-			gl::ELEMENT_ARRAY_BUFFER,
-			(mem::size_of::<i32>() * indices.len()) as isize,
-			indices.as_ptr() as *const _,
-			gl::STATIC_DRAW,
-		);
-
-		gl::BindBuffer(gl::ARRAY_BUFFER, vertex_buffer);
-		gl::VertexAttribPointer(
-			0,
-			2,
-			gl::FLOAT,
-			gl::FALSE,
-			4 * mem::size_of::<f32>() as i32,
-			std::ptr::null(),
-		);
-		gl::EnableVertexAttribArray(0);
-		gl::VertexAttribPointer(
-			1,
-			2,
-			gl::FLOAT,
-			gl::FALSE,
-			4 * mem::size_of::<f32>() as i32,
-			std::ptr::null::<f32>().wrapping_add(2) as *const _,
-		);
-		gl::EnableVertexAttribArray(1);
-
-
-		gl::BindBuffer(gl::ARRAY_BUFFER, 0);
-		gl::BindVertexArray(0);
-	}
-	(vertex_buffer, vao)
 }
 
 /// Updates the vertices
