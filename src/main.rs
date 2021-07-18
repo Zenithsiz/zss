@@ -30,6 +30,7 @@ use args::Args;
 use image::{ImageBuffer, Rgba};
 use texture::Texture;
 use uvs::Uvs;
+use window::Window;
 
 fn main() -> Result<(), anyhow::Error> {
 	// Initialize logger
@@ -45,12 +46,11 @@ fn main() -> Result<(), anyhow::Error> {
 	let args = Args::new().context("Unable to retrieve arguments")?;
 
 	// Then create the window state
-	let mut window_state =
-		unsafe { window::Window::from_window_id(args.window_id) }.context("Unable to initialize open-gl context")?;
-	let [window_width, window_height] = window_state.size();
+	let mut window =
+		unsafe { Window::from_window_id(args.window_id) }.context("Unable to initialize open-gl context")?;
 
 	// Load all images
-	let images = Images::new(&args.images_dir, window_width, window_height).context("Unable to load images")?;
+	let images = Images::new(&args.images_dir, &window).context("Unable to load images")?;
 
 	// Compile the shaders into a program
 	let program = Program::new().context("Unable to create program")?;
@@ -71,19 +71,12 @@ fn main() -> Result<(), anyhow::Error> {
 	let mut progress = 0.0;
 	loop {
 		// Check for events
-		window_state.process_events();
+		window.process_events();
 
 		// Get the uvs
 		let new_uvs = || {
-			self::setup_new_image(
-				images.next_image(),
-				&tex,
-				&vao,
-				window_width,
-				window_height,
-				rand::random(),
-			)
-			.context("Unable to get new image")
+			self::setup_new_image(images.next_image(), &tex, &vao, &window, rand::random())
+				.context("Unable to get new image")
 		};
 		let uvs = match uvs.as_mut() {
 			// If we have none, or the current image ended
@@ -121,15 +114,14 @@ fn main() -> Result<(), anyhow::Error> {
 		progress += 1.0 / 60.0 / args.duration.as_secs_f32();
 
 		// Finally swap buffers
-		window_state.swap_buffers();
+		window.swap_buffers();
 	}
 }
 
 /// Opens and setups a new image
 #[allow(clippy::type_complexity)] // TODO
 fn setup_new_image(
-	image: ImageBuffer<Rgba<u8>, Vec<u8>>, tex: &Texture, vao: &Vao, window_width: u32, window_height: u32,
-	swap_dir: bool,
+	image: ImageBuffer<Rgba<u8>, Vec<u8>>, tex: &Texture, vao: &Vao, window: &Window, swap_dir: bool,
 ) -> Result<Uvs, anyhow::Error> {
 	// Update our texture
 	tex.update(&image);
@@ -138,8 +130,8 @@ fn setup_new_image(
 	let uvs = Uvs::new(
 		image.width() as f32,
 		image.height() as f32,
-		window_width as f32,
-		window_height as f32,
+		window.width() as f32,
+		window.height() as f32,
 		swap_dir,
 	);
 

@@ -1,6 +1,7 @@
 //! Images
 
 // Imports
+use crate::window::Window;
 use anyhow::Context;
 use image::{GenericImageView, ImageBuffer, Rgba};
 use rand::prelude::SliceRandom;
@@ -14,7 +15,7 @@ pub struct Images {
 
 impl Images {
 	/// Loads all images' paths
-	pub fn new(images_dir: impl AsRef<Path>, window_width: u32, window_height: u32) -> Result<Self, anyhow::Error> {
+	pub fn new(images_dir: impl AsRef<Path>, window: &Window) -> Result<Self, anyhow::Error> {
 		// Get all paths and shuffle them
 		let mut paths = std::fs::read_dir(images_dir)
 			.context("Unable to read directory")?
@@ -27,6 +28,7 @@ impl Images {
 		let (sender, receiver) = mpsc::sync_channel(0);
 
 		// Start loading them in a background thread
+		let [window_width, window_height] = window.size();
 		std::thread::spawn(move || {
 			let mut should_quit = false;
 			while !should_quit {

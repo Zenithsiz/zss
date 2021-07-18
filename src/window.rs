@@ -147,7 +147,17 @@ impl Window {
 
 	/// Window size
 	pub fn size(&self) -> [u32; 2] {
-		[self.attrs.width as u32, self.attrs.height as u32]
+		[self.width(), self.height()]
+	}
+
+	/// Window width
+	pub fn width(&self) -> u32 {
+		self.attrs.width as u32
+	}
+
+	/// Window height
+	pub fn height(&self) -> u32 {
+		self.attrs.height as u32
 	}
 
 	/// Processes all X events
