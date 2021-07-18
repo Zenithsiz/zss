@@ -8,9 +8,10 @@
 	bindings_after_at,
 	destructuring_assignment
 )]
+#![warn(unsafe_op_in_unsafe_fn)]
 
 // Modules
-pub mod x;
+pub mod window;
 
 // Imports
 use anyhow::Context;
@@ -39,7 +40,8 @@ fn main() -> Result<(), anyhow::Error> {
 	let window = u64::from_str_radix(&window[2..], 16).context("Unable to parse window id")?;
 
 	// Then create the window state
-	let mut window_state = x::XWindowState::new(window).context("Unable to initialize open-gl context")?;
+	let mut window_state =
+		unsafe { window::Window::from_window_id(window) }.context("Unable to initialize open-gl context")?;
 	let [window_width, window_height] = window_state.size();
 
 	// Compile the shaders into a program

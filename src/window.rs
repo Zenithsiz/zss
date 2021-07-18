@@ -1,4 +1,4 @@
-//! X initialization
+//! Window
 
 // Imports
 use anyhow::Context;
@@ -6,23 +6,22 @@ use std::{
 	ffi::{CStr, CString},
 	mem::{self, MaybeUninit},
 	os::raw::c_int,
-	sync::atomic::{self, AtomicI32},
 };
 use x11::{glx, xlib};
 
-/// X Window state
-pub struct XWindowState {
+/// Window
+pub struct Window {
 	/// Display
 	display: *mut xlib::Display,
 
-	/// window
-	window: u64,
+	/// Id
+	id: u64,
 
-	/// Window attributes
+	/// Attributes
 	attrs: xlib::XWindowAttributes,
 }
 
-impl XWindowState {
+impl Window {
 	/// Frame buffer configuration attributes
 	#[rustfmt::skip]
 	const FRAME_BUFFER_CONFIG_ATTRIBUTES: [i32; 17] = [
@@ -46,8 +45,11 @@ impl XWindowState {
 		0, 0
 	];
 
-	/// Creates a new window state from an existing window
-	pub fn new(window: u64) -> Result<Self, anyhow::Error> {
+	/// Creates a window from an existing x11 window
+	///
+	/// # Safety
+	/// `window_id` must be a valid X window.
+	pub unsafe fn from_window_id(id: u64) -> Result<Self, anyhow::Error> {
 		// Get the display and screen
 		// TODO: Window might not be from the default display, somehow obtain
 		//       the correct display eventually. Maybe same with screen?
@@ -55,12 +57,12 @@ impl XWindowState {
 		let screen = unsafe { xlib::XDefaultScreen(display) };
 
 		// Get the window attributes
-		let mut window_attrs: xlib::XWindowAttributes = unsafe { MaybeUninit::zeroed().assume_init() };
-		unsafe { xlib::XGetWindowAttributes(display, window, &mut window_attrs) };
+		let mut attrs: xlib::XWindowAttributes = unsafe { MaybeUninit::zeroed().assume_init() };
+		unsafe { xlib::XGetWindowAttributes(display, id, &mut attrs) };
 
 		// Get the frame-buffer configs
 		// TODO: Check if there's UB here, atomic solved the issue, but might still exist.
-		let fb_configs_len = AtomicI32::new(0);
+		let mut fb_configs_len = MaybeUninit::uninit();
 		let fb_configs = unsafe {
 			glx::glXChooseFBConfig(
 				display,
@@ -69,9 +71,9 @@ impl XWindowState {
 				fb_configs_len.as_mut_ptr(),
 			)
 		};
-		let fb_configs_len = fb_configs_len.load(atomic::Ordering::Acquire);
+		let fb_configs_len = unsafe { fb_configs_len.assume_init() };
+		log::info!("Found {fb_configs_len} frame-buffer configurations at {fb_configs:?}");
 		anyhow::ensure!(!fb_configs.is_null() && fb_configs_len != 0, "No fg configs found");
-		log::info!("Found {fb_configs_len} frame-buffer configurations");
 
 		// Then select the first one we find
 		// TODO: Maybe pick one based on something?
@@ -104,7 +106,7 @@ impl XWindowState {
 		unsafe {
 			log::info!("Making context {gl_context:?} current");
 			anyhow::ensure!(
-				glx::glXMakeContextCurrent(display, window, window, gl_context) == 1,
+				glx::glXMakeContextCurrent(display, id, id, gl_context) == 1,
 				"Failed to make context current"
 			);
 		}
@@ -126,7 +128,7 @@ impl XWindowState {
 		// And log info about which gl version we got.
 		let gl_version = unsafe { gl::GetString(gl::VERSION) };
 		let gl_version = unsafe { CStr::from_ptr(gl_version as *const _) };
-		log::info!("Gl version: {gl_version:?}");
+		log::debug!("Gl version: {gl_version:?}");
 
 		// Enable gl errors
 		unsafe {
@@ -137,14 +139,10 @@ impl XWindowState {
 		// Setup the buffer and viewport from the window
 		unsafe {
 			gl::DrawBuffer(gl::BACK);
-			gl::Viewport(0, 0, window_attrs.width, window_attrs.height);
+			gl::Viewport(0, 0, attrs.width, attrs.height);
 		}
 
-		Ok(Self {
-			display,
-			window,
-			attrs: window_attrs,
-		})
+		Ok(Self { display, id, attrs })
 	}
 
 	/// Window size
@@ -165,7 +163,7 @@ impl XWindowState {
 	/// Swaps buffers
 	pub fn swap_buffers(&mut self) {
 		unsafe {
-			glx::glXSwapBuffers(self.display, self.window);
+			glx::glXSwapBuffers(self.display, self.id);
 		}
 	}
 }
