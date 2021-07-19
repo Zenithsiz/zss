@@ -50,7 +50,8 @@ fn main() -> Result<(), anyhow::Error> {
 		.context("Unable to create window")?;
 
 	// Load images
-	let images = Images::new(&args.images_dir, &window).context("Unable to load images")?;
+	let mut images = Images::new(args.images_dir.clone(), args.image_backlog, Rc::clone(&window))
+		.context("Unable to load images")?;
 
 	// Create the backend
 	let backend = GliumBackend::new(Rc::clone(&window)).context("Unable to create backend")?;
@@ -79,8 +80,8 @@ fn main() -> Result<(), anyhow::Error> {
 	.context("Unable to build program")?;
 
 	// Create both images
-	let mut cur_image = Image::new(&facade, &images, &window).context("Unable to create image")?;
-	let mut next_image = Image::new(&facade, &images, &window).context("Unable to create image")?;
+	let mut cur_image = Image::new(&facade, &mut images, &window).context("Unable to create image")?;
+	let mut next_image = Image::new(&facade, &mut images, &window).context("Unable to create image")?;
 
 	let mut progress = 0.0;
 	loop {
@@ -111,7 +112,7 @@ fn main() -> Result<(), anyhow::Error> {
 			&mut cur_image,
 			&mut next_image,
 			&facade,
-			&images,
+			&mut images,
 			&window,
 		)?;
 	}
@@ -120,7 +121,7 @@ fn main() -> Result<(), anyhow::Error> {
 /// Updates
 fn update(
 	progress: &mut f32, args: &Args, cur_image: &mut Image, next_image: &mut Image, facade: &GliumFacade,
-	images: &Images, window: &Window,
+	images: &mut Images, window: &Window,
 ) -> Result<(), anyhow::Error> {
 	// Increase the progress
 	*progress += (1.0 / 60.0) / args.duration.as_secs_f32();
@@ -203,7 +204,7 @@ struct Image {
 
 impl Image {
 	/// Creates a new image
-	pub fn new(facade: &GliumFacade, images: &Images, window: &Window) -> Result<Self, anyhow::Error> {
+	pub fn new(facade: &GliumFacade, images: &mut Images, window: &Window) -> Result<Self, anyhow::Error> {
 		let image = images.next_image();
 
 		let image_dims = image.dimensions();
@@ -231,7 +232,7 @@ impl Image {
 	}
 
 	/// Updates this image
-	pub fn update(&mut self, facade: &GliumFacade, images: &Images, window: &Window) -> Result<(), anyhow::Error> {
+	pub fn update(&mut self, facade: &GliumFacade, images: &mut Images, window: &Window) -> Result<(), anyhow::Error> {
 		let image = images.next_image();
 
 		let image_dims = image.dimensions();

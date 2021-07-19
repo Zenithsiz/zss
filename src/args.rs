@@ -18,6 +18,9 @@ pub struct Args {
 
 	/// Fade
 	pub fade: f32,
+
+	/// Image backlog
+	pub image_backlog: usize,
 }
 
 impl Args {
@@ -27,6 +30,7 @@ impl Args {
 		const IMAGES_DIR_STR: &str = "images-dir";
 		const DURATION_STR: &str = "duration";
 		const FADE_STR: &str = "fade";
+		const IMAGE_BACKLOG_STR: &str = "image-backlog";
 
 		// Get all matches from cli
 		let matches = ClapApp::new("Zss")
@@ -71,6 +75,15 @@ impl Args {
 					.short("f")
 					.default_value("0.8"),
 			)
+			.arg(
+				ClapArg::with_name(IMAGE_BACKLOG_STR)
+					.help("Image backlog")
+					.long_help("Number of images to keep loaded, aside from 2/3 that must be always loaded.")
+					.takes_value(true)
+					.long("backlog")
+					.short("b")
+					.default_value("0"),
+			)
 			.get_matches();
 
 		let window_id = matches.value_of(WINDOW_ID_STR).expect("Required argument was missing");
@@ -96,11 +109,17 @@ impl Args {
 		let fade = fade.parse().context("Unable to parse fade")?;
 		anyhow::ensure!((0.5..=1.0).contains(&fade), "Fade must be within 0.5 .. 1.0");
 
+		let image_backlog = matches
+			.value_of(IMAGE_BACKLOG_STR)
+			.expect("Argument with default value was missing");
+		let image_backlog = image_backlog.parse().context("Unable to parse image backlog")?;
+
 		Ok(Self {
 			window_id,
 			duration,
 			images_dir,
 			fade,
+			image_backlog,
 		})
 	}
 }
