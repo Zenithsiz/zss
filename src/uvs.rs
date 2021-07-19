@@ -29,7 +29,7 @@ impl ImageUvs {
 	}
 
 	/// Returns the starting uvs
-	pub fn start(&self) -> [f32; 2] {
+	pub const fn start(&self) -> [f32; 2] {
 		self.start
 	}
 

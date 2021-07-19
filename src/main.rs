@@ -2,7 +2,25 @@
 
 // Features
 #![feature(format_args_capture, try_blocks, drain_filter)]
+// Warnings
+#![warn(
+	clippy::correctness,
+	clippy::perf,
+	clippy::style,
+	clippy::pedantic,
+	clippy::complexity,
+	clippy::cargo,
+	clippy::nursery
+)]
 #![warn(unsafe_op_in_unsafe_fn)]
+// `match` can look better than `if` + `else`
+#![allow(clippy::single_match_else, clippy::match_bool)]
+// Some false positives
+#![allow(clippy::cargo_common_metadata)]
+// Our module organization makes this happen a lot, but struct names should be consistent
+#![allow(clippy::module_name_repetitions)]
+// We can't super control this, and it shouldn't be a big issue
+#![allow(clippy::multiple_crate_versions)]
 
 // Modules
 mod args;
@@ -165,7 +183,7 @@ fn draw(
 		};
 		let draw_parameters = glium::DrawParameters {
 			blend: glium::Blend::alpha_blending(),
-			..Default::default()
+			..glium::DrawParameters::default()
 		};
 		target
 			.draw(&image.vertex_buffer, indices, program, &uniforms, &draw_parameters)
@@ -203,6 +221,7 @@ impl Image {
 		)
 		.context("Unable to create texture")?;
 
+		#[allow(clippy::cast_precision_loss)] // Image and window sizes are likely much lower than 2^24
 		let uvs = ImageUvs::new(
 			image_dims.0 as f32,
 			image_dims.1 as f32,
@@ -231,13 +250,15 @@ impl Image {
 		)
 		.context("Unable to create texture")?;
 
-		self.uvs = ImageUvs::new(
+		#[allow(clippy::cast_precision_loss)] // Image and window sizes are likely much lower than 2^24
+		let uvs = ImageUvs::new(
 			image_dims.0 as f32,
 			image_dims.1 as f32,
 			window.width() as f32,
 			window.height() as f32,
 			rand::random(),
 		);
+		self.uvs = uvs;
 
 		self.vertex_buffer
 			.as_mut_slice()
@@ -247,7 +268,7 @@ impl Image {
 	}
 
 	/// Creates the vertices for uvs
-	fn vertices(uvs_start: [f32; 2]) -> [Vertex; 4] {
+	const fn vertices(uvs_start: [f32; 2]) -> [Vertex; 4] {
 		[
 			Vertex {
 				vertex_pos: [-1.0, -1.0],

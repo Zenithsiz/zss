@@ -3,6 +3,7 @@
 // Imports
 use anyhow::Context;
 use std::{
+	convert::TryInto,
 	mem::{self, MaybeUninit},
 	os::raw::c_int,
 };
@@ -123,8 +124,8 @@ impl Window {
 
 		Ok(Self {
 			display,
-			gl_context,
 			id,
+			gl_context,
 			attrs,
 		})
 	}
@@ -136,12 +137,12 @@ impl Window {
 
 	/// Window width
 	pub fn width(&self) -> u32 {
-		self.attrs.width as u32
+		self.attrs.width.try_into().expect("Window width was negative")
 	}
 
 	/// Window height
 	pub fn height(&self) -> u32 {
-		self.attrs.height as u32
+		self.attrs.height.try_into().expect("Window height was negative")
 	}
 
 	/// Processes all X events

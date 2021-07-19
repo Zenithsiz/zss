@@ -12,6 +12,8 @@ pub struct GliumBackend {
 }
 
 impl GliumBackend {
+	/// Creates a new glium backend
+	#[allow(clippy::unnecessary_wraps)] // We might in the future require some initialization here.
 	pub fn new(window: Rc<Window>) -> Result<Self, anyhow::Error> {
 		Ok(Self { window })
 	}
@@ -27,7 +29,7 @@ unsafe impl glium::backend::Backend for GliumBackend {
 	unsafe fn get_proc_address(&self, name: &str) -> *const std::ffi::c_void {
 		let name_cstr = CString::new(name).expect("Unable to create c-string from name");
 		// SAFETY: `glXGetProcAddressARB` should be safe to call with any string.
-		match unsafe { glx::glXGetProcAddressARB(name_cstr.as_ptr() as *const u8) } {
+		match unsafe { glx::glXGetProcAddressARB(name_cstr.as_ptr().cast()) } {
 			Some(f) => f as *const _,
 			None => {
 				log::warn!("Unable to load {name}");
@@ -47,6 +49,6 @@ unsafe impl glium::backend::Backend for GliumBackend {
 	unsafe fn make_current(&self) {
 		self.window
 			.make_context_current()
-			.expect("Unable to make context current")
+			.expect("Unable to make context current");
 	}
 }

@@ -30,7 +30,7 @@ pub struct Images {
 
 impl Images {
 	/// Loads all images' paths
-	pub fn new(images_dir: PathBuf, image_backlog: usize, window: Rc<Window>) -> Result<Self, anyhow::Error> {
+	pub fn new(images_dir: impl AsRef<Path>, image_backlog: usize, window: Rc<Window>) -> Result<Self, anyhow::Error> {
 		// Get all paths
 		let paths = load_paths(&images_dir)?;
 
@@ -91,6 +91,7 @@ fn load_paths(images_dir: impl AsRef<Path>) -> Result<Vec<PathBuf>, anyhow::Erro
 }
 
 /// Image loader to run in a background thread
+#[allow(clippy::needless_pass_by_value)] // It's better for this function to own the sender
 fn image_loader(
 	mut paths: Vec<PathBuf>, [window_width, window_height]: [u32; 2],
 	sender: mpsc::SyncSender<ImageBuffer<Rgba<u8>, Vec<u8>>>,

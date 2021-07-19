@@ -1,6 +1,11 @@
 [package]
+categories = []
+description = "Scrolling wallpaper based on X screens."
 edition = "2018"
+keywords = []
+license = "MIT"
 name = "zss"
+repository = "https://github.com/Zenithsiz/zss"
 version = "1.0.0"
 
 [dependencies]
