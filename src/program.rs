@@ -8,6 +8,9 @@ use std::ffi::{CStr, CString};
 pub struct Program {
 	/// Id
 	id: u32,
+
+	/// Location of `tex_offset`
+	tex_offset_location: i32,
 }
 
 impl Program {
@@ -100,13 +103,20 @@ impl Program {
 			gl::DeleteShader(frag_shader);
 		}
 
+		// Get locations
+		let tex_location = self::uniform_location(id, "tex").context("Unable to get uniform location")?;
+		let tex_offset_location = self::uniform_location(id, "tex_offset").context("Unable to get uniform location")?;
+
 		// Set the tex sampler to texture 0.
 		unsafe {
 			gl::UseProgram(id);
-			gl::Uniform1i(gl::GetUniformLocation(id, b"tex\0".as_ptr() as *const i8), 0);
+			gl::Uniform1i(tex_location, 0);
 		}
 
-		Ok(Self { id })
+		Ok(Self {
+			id,
+			tex_offset_location,
+		})
 	}
 
 	/// Executes code with this program being used
@@ -123,15 +133,20 @@ impl Program {
 		value
 	}
 
-	/// Returns a uniform location
-	pub fn uniform_location(&self, name: &str) -> Result<i32, anyhow::Error> {
-		// Get the name as a c-string
-		let name_cstr = CString::new(name).context("Unable to get name as c-string")?;
-
-		// Then get the location and make sure we found it
-		let location = unsafe { gl::GetUniformLocation(self.id, name_cstr.as_ptr() as *const _) };
-		anyhow::ensure!(location > 0, "Location {} not found", name);
-
-		Ok(location)
+	/// Returns the tex offset location
+	pub fn tex_offset_location(&self) -> i32 {
+		self.tex_offset_location
 	}
+}
+
+/// Returns a uniform location
+fn uniform_location(program: u32, name: &str) -> Result<i32, anyhow::Error> {
+	// Get the name as a c-string
+	let name_cstr = CString::new(name).context("Unable to get name as c-string")?;
+
+	// Then get the location and make sure we found it
+	let location = unsafe { gl::GetUniformLocation(program, name_cstr.as_ptr() as *const _) };
+	anyhow::ensure!(location > 0, "Location {} not found", name);
+
+	Ok(location)
 }

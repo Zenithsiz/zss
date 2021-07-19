@@ -45,20 +45,14 @@ fn main() -> Result<(), anyhow::Error> {
 	// Get arguments
 	let args = Args::new().context("Unable to retrieve arguments")?;
 
-	// Then create the window state
-	let mut window =
-		unsafe { Window::from_window_id(args.window_id) }.context("Unable to initialize open-gl context")?;
+	// Then create the window
+	let mut window = unsafe { Window::from_window_id(args.window_id) }.context("Unable to create window")?;
 
 	// Load all images
 	let images = Images::new(&args.images_dir, &window).context("Unable to load images")?;
 
 	// Compile the shaders into a program
 	let program = Program::new().context("Unable to create program")?;
-
-	// Get the `tex_offset` location
-	let tex_offset_location = program
-		.uniform_location("tex_offset")
-		.context("Unable to get uniform location")?;
 
 	// Create the vao
 	let vao = Vao::new();
@@ -99,7 +93,7 @@ fn main() -> Result<(), anyhow::Error> {
 			// Update the texture offset
 			let tex_offset = uvs.offset(progress);
 			unsafe {
-				gl::Uniform2f(tex_offset_location, tex_offset[0], tex_offset[1]);
+				gl::Uniform2f(program.tex_offset_location(), tex_offset[0], tex_offset[1]);
 			}
 
 			// Then bind the vao and texture and draw
