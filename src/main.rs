@@ -49,7 +49,7 @@ fn main() -> Result<(), anyhow::Error> {
 		.map(Rc::new)
 		.context("Unable to create window")?;
 
-	// Load all images
+	// Load images
 	let images = Images::new(&args.images_dir, &window).context("Unable to load images")?;
 
 	// Create the backend

@@ -24,43 +24,52 @@ impl Args {
 	/// Parses all arguments
 	pub fn new() -> Result<Self, anyhow::Error> {
 		const WINDOW_ID_STR: &str = "window-id";
-		const DURATION_STR: &str = "duration";
 		const IMAGES_DIR_STR: &str = "images-dir";
+		const DURATION_STR: &str = "duration";
 		const FADE_STR: &str = "fade";
 
 		// Get all matches from cli
 		let matches = ClapApp::new("Zss")
-			.version("0.0")
-			.author("Filipe [...] <[...]@gmail.com>")
-			.about("Displays a wallpaper")
+			.version("1.0")
+			.author("Filipe Rodrigues <filipejacintorodrigues1@gmail.com>")
+			.about("Displays a scrolling wallpaper with Multiple images")
 			.arg(
 				ClapArg::with_name(WINDOW_ID_STR)
 					.help("The window id")
+					.long_help("An `X` window id. Typically obtained from `xwinwrap`")
 					.takes_value(true)
 					.required(true)
+					.long("window-id")
+					.short("w")
 					.index(1),
-			)
-			.arg(
-				ClapArg::with_name(DURATION_STR)
-					.help("Duration of each one")
-					.takes_value(true)
-					.long("duration")
-					.short("d"),
 			)
 			.arg(
 				ClapArg::with_name(IMAGES_DIR_STR)
 					.help("Images Directory")
+					.long_help("Path to directory with images. Non-images will be ignored.")
 					.takes_value(true)
 					.required(true)
 					.long("images-dir")
-					.short("i"),
+					.short("i")
+					.index(2),
+			)
+			.arg(
+				ClapArg::with_name(DURATION_STR)
+					.help("Duration (in seconds) of each image")
+					.long_help("Duration, in seconds, each image will take up on screen, including during fading.")
+					.takes_value(true)
+					.long("duration")
+					.short("d")
+					.default_value("30"),
 			)
 			.arg(
 				ClapArg::with_name(FADE_STR)
-					.help("Fade")
+					.help("Fade percentage (0.5 .. 1.0)")
+					.long_help("Percentage, from 0.5 to 1.0, of when to start fading the image during it's display.")
 					.takes_value(true)
 					.long("fade")
-					.short("f"),
+					.short("f")
+					.default_value("0.8"),
 			)
 			.get_matches();
 
@@ -69,12 +78,11 @@ impl Args {
 		anyhow::ensure!(window_id.starts_with("0x"), "Window id didn't start with `0x`");
 		let window_id = u64::from_str_radix(&window_id[2..], 16).context("Unable to parse window id")?;
 
-		let duration = matches.value_of(DURATION_STR);
-		let duration = duration
-			.map(str::parse)
-			.transpose()
-			.context("Invalid duration")?
-			.map_or(Duration::from_secs(30), Duration::from_secs_f32);
+		let duration = matches
+			.value_of(DURATION_STR)
+			.expect("Argument with default value was missing");
+		let duration = duration.parse().context("Unable to parse duration")?;
+		let duration = Duration::from_secs_f32(duration);
 
 		let images_dir = PathBuf::from(
 			matches
@@ -82,8 +90,10 @@ impl Args {
 				.expect("Required argument was missing"),
 		);
 
-		let fade = matches.value_of(FADE_STR);
-		let fade = fade.map(str::parse).transpose().context("Invalid fade")?.unwrap_or(0.8);
+		let fade = matches
+			.value_of(FADE_STR)
+			.expect("Argument with default value was missing");
+		let fade = fade.parse().context("Unable to parse fade")?;
 		anyhow::ensure!((0.5..=1.0).contains(&fade), "Fade must be within 0.5 .. 1.0");
 
 		Ok(Self {
