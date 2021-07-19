@@ -2,8 +2,8 @@
 
 
 // Inputs
-layout (location=0) in vec2 vertex_pos;
-layout (location=1) in vec2 vertex_tex;
+in vec2 vertex_pos;
+in vec2 vertex_tex;
 
 // Outputs
 out vec2 frag_pos;

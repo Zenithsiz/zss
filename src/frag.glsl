@@ -1,7 +1,7 @@
 #version 330 core
 
 // Uniforms
-uniform sampler2D tex;
+uniform sampler2D tex_sampler;
 uniform vec2 tex_offset;
 
 // Inputs
@@ -12,5 +12,9 @@ in vec2 frag_tex;
 out vec4 color;
 
 void main() {
-	color = texture(tex, frag_tex + tex_offset);
+	// Get the texture
+	color = texture(tex_sampler, frag_tex + tex_offset);
+
+	// Set alpha mixing
+	color.a = 1.0;
 }

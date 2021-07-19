@@ -1,6 +1,7 @@
 //! Image uvs
 
-pub struct Uvs {
+/// Image uvs
+pub struct ImageUvs {
 	/// uvs
 	start: [f32; 2],
 
@@ -11,7 +12,7 @@ pub struct Uvs {
 	swap_dir: bool,
 }
 
-impl Uvs {
+impl ImageUvs {
 	/// Creates the uvs for an image
 	pub fn new(image_width: f32, image_height: f32, window_width: f32, window_height: f32, swap_dir: bool) -> Self {
 		let (start, end) = match image_width / image_height >= window_width / window_height {

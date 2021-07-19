@@ -3,7 +3,6 @@
 // Imports
 use anyhow::Context;
 use std::{
-	ffi::{CStr, CString},
 	mem::{self, MaybeUninit},
 	os::raw::c_int,
 };
@@ -16,6 +15,9 @@ pub struct Window {
 
 	/// Id
 	id: u64,
+
+	/// Gl context
+	gl_context: glx::GLXContext,
 
 	/// Attributes
 	attrs: xlib::XWindowAttributes,
@@ -102,47 +104,12 @@ impl Window {
 		};
 		anyhow::ensure!(!gl_context.is_null(), "Unable to get gl context");
 
-		// And make it current
-		unsafe {
-			log::info!("Making context {gl_context:?} current");
-			anyhow::ensure!(
-				glx::glXMakeContextCurrent(display, id, id, gl_context) == 1,
-				"Failed to make context current"
-			);
-		}
-
-		// Finally load all gl functions
-		unsafe {
-			gl::load_with(|name| {
-				let name_cstr = CString::new(name).expect("Unable to create c-string from name");
-				match glx::glXGetProcAddressARB(name_cstr.as_ptr() as *const u8) {
-					Some(f) => f as *const _,
-					None => {
-						log::warn!("Unable to load {name}");
-						std::ptr::null()
-					},
-				}
-			})
-		};
-
-		// And log info about which gl version we got.
-		let gl_version = unsafe { gl::GetString(gl::VERSION) };
-		let gl_version = unsafe { CStr::from_ptr(gl_version as *const _) };
-		log::info!("Gl version: {gl_version:?}");
-
-		// Enable gl errors
-		unsafe {
-			gl::Enable(gl::DEBUG_OUTPUT);
-			gl::DebugMessageCallback(Some(gl_debug_callback), std::ptr::null());
-		}
-
-		// Setup the buffer and viewport from the window
-		unsafe {
-			gl::DrawBuffer(gl::BACK);
-			gl::Viewport(0, 0, attrs.width, attrs.height);
-		}
-
-		Ok(Self { display, id, attrs })
+		Ok(Self {
+			display,
+			gl_context,
+			id,
+			attrs,
+		})
 	}
 
 	/// Window size
@@ -161,7 +128,7 @@ impl Window {
 	}
 
 	/// Processes all X events
-	pub fn process_events(&mut self) {
+	pub fn process_events(&self) {
 		while unsafe { xlib::XPending(self.display) } != 0 {
 			let mut event = xlib::XEvent { type_: 0 };
 			unsafe { xlib::XNextEvent(self.display, &mut event) };
@@ -170,58 +137,24 @@ impl Window {
 		}
 	}
 
+	/// Returns if the gl context is current
+	pub fn is_context_current(&self) -> bool {
+		let gl_context = unsafe { glx::glXGetCurrentContext() };
+		gl_context == self.gl_context
+	}
+
+	/// Makes the current gl context current
+	pub fn make_context_current(&self) -> Result<(), anyhow::Error> {
+		let res = unsafe { glx::glXMakeContextCurrent(self.display, self.id, self.id, self.gl_context) };
+
+		anyhow::ensure!(res == 1, "Failed to make context current");
+		Ok(())
+	}
+
 	/// Swaps buffers
-	pub fn swap_buffers(&mut self) {
+	pub fn swap_buffers(&self) {
 		unsafe {
 			glx::glXSwapBuffers(self.display, self.id);
 		}
 	}
-}
-
-/// Debug callback for gl.
-extern "system" fn gl_debug_callback(
-	source: u32, kind: u32, id: u32, severity: u32, length: i32, msg: *const i8, _: *mut std::ffi::c_void,
-) {
-	let msg = match length {
-		// If negative, `msg` is null-terminated
-		length if length < 0 => unsafe { CStr::from_ptr(msg).to_string_lossy() },
-		_ => {
-			let slice = unsafe { std::slice::from_raw_parts(msg as *const u8, length as usize) };
-			String::from_utf8_lossy(slice)
-		},
-	};
-
-	let source = match source {
-		gl::DEBUG_SOURCE_API => "Api",
-		gl::DEBUG_SOURCE_APPLICATION => "Application",
-		gl::DEBUG_SOURCE_OTHER => "Other",
-		gl::DEBUG_SOURCE_SHADER_COMPILER => "Shader Compiler",
-		gl::DEBUG_SOURCE_THIRD_PARTY => "Third Party",
-		gl::DEBUG_SOURCE_WINDOW_SYSTEM => "Window System",
-		_ => "<Unknown>",
-	};
-
-	// TODO: Do something about `PUSH/POP_GROUP`?
-	let kind = match kind {
-		gl::DEBUG_TYPE_DEPRECATED_BEHAVIOR => "Deprecated Behavior",
-		gl::DEBUG_TYPE_ERROR => "Error",
-		gl::DEBUG_TYPE_MARKER => "Marker",
-		gl::DEBUG_TYPE_OTHER => "Other",
-		gl::DEBUG_TYPE_PERFORMANCE => "Performance",
-		gl::DEBUG_TYPE_POP_GROUP => "Pop Group",
-		gl::DEBUG_TYPE_PORTABILITY => "Portability",
-		gl::DEBUG_TYPE_PUSH_GROUP => "Push Group",
-		gl::DEBUG_TYPE_UNDEFINED_BEHAVIOR => "Undefined Behavior",
-		_ => "<Unknown>",
-	};
-
-	let log_level = match severity {
-		gl::DEBUG_SEVERITY_HIGH => log::Level::Error,
-		gl::DEBUG_SEVERITY_LOW => log::Level::Info,
-		gl::DEBUG_SEVERITY_MEDIUM => log::Level::Warn,
-		gl::DEBUG_SEVERITY_NOTIFICATION => log::Level::Debug,
-		_ => log::Level::Trace,
-	};
-
-	log::log!(log_level, "[{source}]:[{kind}]:{id}: {msg}");
 }

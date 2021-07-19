@@ -12,7 +12,7 @@ version = "0.1.0"
 x11 = {version = "2.18.2", features = ["xlib", "glx", "xrender"]}
 
 # Opengl
-gl = "0.14.0"
+glium = {version = "0.30.1", default-features = false, features = []}
 
 # Image
 image = "0.23.14"
