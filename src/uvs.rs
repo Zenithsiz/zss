@@ -1,6 +1,7 @@
 //! Image uvs
 
 /// Image uvs
+#[derive(Debug)]
 pub struct ImageUvs {
 	/// uvs
 	start: [f32; 2],

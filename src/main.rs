@@ -10,7 +10,8 @@
 	maybe_uninit_uninit_array,
 	maybe_uninit_array_assume_init,
 	try_blocks,
-	drain_filter
+	drain_filter,
+	exclusive_range_pattern
 )]
 #![warn(unsafe_op_in_unsafe_fn)]
 
@@ -27,7 +28,7 @@ use crate::{glium_backend::GliumBackend, glium_facade::GliumFacade, images::Imag
 use anyhow::Context;
 use args::Args;
 use glium::Surface;
-use std::rc::Rc;
+use std::{mem, rc::Rc};
 use window::Window;
 
 fn main() -> Result<(), anyhow::Error> {
@@ -77,46 +78,118 @@ fn main() -> Result<(), anyhow::Error> {
 	}
 	.context("Unable to build program")?;
 
-	let mut image = Image::new(&facade, &images, &window).context("Unable to create image")?;
+	// Create both images
+	let mut cur_image = Image::new(&facade, &images, &window).context("Unable to create image")?;
+	let mut next_image = Image::new(&facade, &images, &window).context("Unable to create image")?;
 
 	let mut progress = 0.0;
 	loop {
 		// Process events
 		window.process_events();
 
-		// Then start drawing and clear
+		// Draw
 		let mut target = facade.draw();
-		target.clear_color(0.0, 0.0, 1.0, 1.0);
+		let draw_res = self::draw(
+			&mut target,
+			progress,
+			&args,
+			&cur_image,
+			&next_image,
+			&indices,
+			&program,
+		);
 
-		// And draw the image
+		if let Err(err) = draw_res {
+			mem::forget(target);
+			log::warn!("Unable to draw: {err:?}");
+		}
+
+		// Update
+		self::update(
+			&mut progress,
+			&args,
+			&mut cur_image,
+			&mut next_image,
+			&facade,
+			&images,
+			&window,
+		)?;
+	}
+}
+
+/// Updates
+fn update(
+	progress: &mut f32, args: &Args, cur_image: &mut Image, next_image: &mut Image, facade: &GliumFacade,
+	images: &Images, window: &Window,
+) -> Result<(), anyhow::Error> {
+	// Increase the progress
+	*progress += (1.0 / 60.0) / args.duration.as_secs_f32();
+
+	// If we reached the end
+	if *progress >= 1.0 {
+		// Reset the progress to where we where during the fade
+		*progress = 1.0 - args.fade;
+
+		// Swap the images
+		mem::swap(cur_image, next_image);
+
+		// And update the next
+		next_image
+			.update(facade, images, window)
+			.context("Unable to update image")?;
+	}
+
+	Ok(())
+}
+
+/// Draws
+fn draw(
+	target: &mut glium::Frame, progress: f32, args: &Args, cur_image: &Image, next_image: &Image,
+	indices: &glium::IndexBuffer<u32>, program: &glium::Program,
+) -> Result<(), anyhow::Error> {
+	// Calculate the base alpha and progress to apply to the images
+	let (base_alpha, next_progress) = match progress {
+		f if f >= args.fade => ((progress - args.fade) / (1.0 - args.fade), progress - args.fade),
+		_ => (0.0, 0.0),
+	};
+
+	// Clear the screen
+	target.clear_color(0.0, 0.0, 0.0, 1.0);
+
+	// Then draw
+	for (image, alpha, progress) in [
+		(cur_image, 1.0 - base_alpha, progress),
+		(next_image, base_alpha, next_progress),
+	] {
+		// If alpha is 0, don't render
+		if alpha == 0.0 {
+			continue;
+		}
+
 		let sampler = image.texture.sampled();
 		let tex_offset = image.uvs.offset(progress);
 		let uniforms = glium::uniform! {
 			tex_sampler: sampler,
 			tex_offset: tex_offset,
+			alpha: alpha,
+		};
+		let draw_parameters = glium::DrawParameters {
+			blend: glium::Blend::alpha_blending(),
+			..Default::default()
 		};
 		target
-			.draw(&image.vertex_buffer, &indices, &program, &uniforms, &Default::default())
+			.draw(&image.vertex_buffer, indices, program, &uniforms, &draw_parameters)
 			.context("Unable to draw")?;
-
-		// Finally finish
-		target.finish().context("Unable to finish drawing")?;
-
-		// Update our progress
-		progress += (1.0 / 60.0) / args.duration.as_secs_f32();
-
-		// And check if we've hit the end
-		if progress >= 1.0 {
-			progress = 0.0;
-
-			image
-				.update(&facade, &images, &window)
-				.context("Unable to update image")?;
-		}
 	}
+
+	// Set the target as finished
+	target.set_finish().context("Unable to finish drawing")?;
+
+	Ok(())
 }
 
 /// Image
+#[derive(Debug)]
 struct Image {
 	/// Texture
 	texture: glium::Texture2d,
@@ -208,7 +281,7 @@ impl Image {
 
 
 /// Vertex
-#[derive(Copy, Clone)]
+#[derive(Clone, Copy, Debug)]
 struct Vertex {
 	vertex_pos: [f32; 2],
 	vertex_tex: [f32; 2],

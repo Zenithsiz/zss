@@ -3,6 +3,7 @@
 // Uniforms
 uniform sampler2D tex_sampler;
 uniform vec2 tex_offset;
+uniform float alpha;
 
 // Inputs
 in vec2 frag_pos;
@@ -16,5 +17,5 @@ void main() {
 	color = texture(tex_sampler, frag_tex + tex_offset);
 
 	// Set alpha mixing
-	color.a = 1.0;
+	color.a = alpha;
 }

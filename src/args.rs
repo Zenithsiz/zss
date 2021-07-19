@@ -15,6 +15,9 @@ pub struct Args {
 
 	/// Images directory
 	pub images_dir: PathBuf,
+
+	/// Fade
+	pub fade: f32,
 }
 
 impl Args {
@@ -23,6 +26,7 @@ impl Args {
 		const WINDOW_ID_STR: &str = "window-id";
 		const DURATION_STR: &str = "duration";
 		const IMAGES_DIR_STR: &str = "images-dir";
+		const FADE_STR: &str = "fade";
 
 		// Get all matches from cli
 		let matches = ClapApp::new("Zss")
@@ -51,6 +55,13 @@ impl Args {
 					.long("images-dir")
 					.short("i"),
 			)
+			.arg(
+				ClapArg::with_name(FADE_STR)
+					.help("Fade")
+					.takes_value(true)
+					.long("fade")
+					.short("f"),
+			)
 			.get_matches();
 
 		let window_id = matches.value_of(WINDOW_ID_STR).expect("Required argument was missing");
@@ -71,10 +82,15 @@ impl Args {
 				.expect("Required argument was missing"),
 		);
 
+		let fade = matches.value_of(FADE_STR);
+		let fade = fade.map(str::parse).transpose().context("Invalid fade")?.unwrap_or(0.8);
+		anyhow::ensure!((0.5..=1.0).contains(&fade), "Fade must be within 0.5 .. 1.0");
+
 		Ok(Self {
 			window_id,
 			duration,
 			images_dir,
+			fade,
 		})
 	}
 }
