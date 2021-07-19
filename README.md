@@ -13,7 +13,7 @@ See `zss --help` for other options, such as duration, fading and image backlog.
 
 # Install
 
-May be install using a nightly `cargo` with
+May be installed using a nightly `cargo` with
 
 ```
 cargo +nightly install zss
