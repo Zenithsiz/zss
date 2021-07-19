@@ -45,7 +45,7 @@ Requires `X` and opengl `3.3` at least (Not tested). Will attempt to use latest 
 
 As per the description may be used as a wallpaper.
 
-My settings are the following, use `xwinwrap` to see what each option does and to
+My settings are the following, use `xwinwrap --help` and `zss --help` to see what each option does and to
 adjust to your window geometry (I have 2 monitors, thus the large offsets).
 
 ```
