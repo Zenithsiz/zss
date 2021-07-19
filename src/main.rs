@@ -45,7 +45,7 @@ fn main() -> Result<(), anyhow::Error> {
 	let args = Args::new().context("Unable to retrieve arguments")?;
 
 	// Then create the window
-	let window = unsafe { Window::from_window_id(args.window_id) }
+	let window = Window::from_window_id(args.window_id)
 		.map(Rc::new)
 		.context("Unable to create window")?;
 

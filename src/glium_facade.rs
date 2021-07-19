@@ -18,6 +18,7 @@ pub struct GliumFacade {
 impl GliumFacade {
 	/// Creates a new display
 	pub fn new(backend: GliumBackend) -> Result<Self, anyhow::Error> {
+		// SAFETY: The backend has a safe implementation.
 		let context = unsafe { Context::new(backend, true, DebugCallbackBehavior::PrintAll) }
 			.context("Unable to create context")?;
 

@@ -17,6 +17,7 @@ impl GliumBackend {
 	}
 }
 
+// SAFETY: The implementation of each function is safe
 unsafe impl glium::backend::Backend for GliumBackend {
 	fn swap_buffers(&self) -> Result<(), glium::SwapBuffersError> {
 		self.window.swap_buffers();
@@ -25,6 +26,7 @@ unsafe impl glium::backend::Backend for GliumBackend {
 
 	unsafe fn get_proc_address(&self, name: &str) -> *const std::ffi::c_void {
 		let name_cstr = CString::new(name).expect("Unable to create c-string from name");
+		// SAFETY: `glXGetProcAddressARB` should be safe to call with any string.
 		match unsafe { glx::glXGetProcAddressARB(name_cstr.as_ptr() as *const u8) } {
 			Some(f) => f as *const _,
 			None => {

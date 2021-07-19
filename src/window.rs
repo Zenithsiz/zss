@@ -48,22 +48,29 @@ impl Window {
 	];
 
 	/// Creates a window from an existing x11 window
-	///
-	/// # Safety
-	/// `window_id` must be a valid X window.
-	pub unsafe fn from_window_id(id: u64) -> Result<Self, anyhow::Error> {
+	pub fn from_window_id(id: u64) -> Result<Self, anyhow::Error> {
 		// Get the display and screen
 		// TODO: Window might not be from the default display, somehow obtain
 		//       the correct display eventually. Maybe same with screen?
+		// SAFETY: These functions should be inherently safe to use, they take
+		//         no arguments (aside from `NULL`, which is valid), so no UB
+		//         should be possible.
 		let display = unsafe { xlib::XOpenDisplay(std::ptr::null()) };
 		let screen = unsafe { xlib::XDefaultScreen(display) };
 
 		// Get the window attributes
-		let mut attrs: xlib::XWindowAttributes = unsafe { MaybeUninit::zeroed().assume_init() };
-		unsafe { xlib::XGetWindowAttributes(display, id, &mut attrs) };
+		// SAFETY: Even if `id` isn't a valid window, this should simply return `0`,
+		//         which we catch before the `assume_init` call.
+		let mut attrs = MaybeUninit::uninit();
+		anyhow::ensure!(
+			unsafe { xlib::XGetWindowAttributes(display, id, attrs.as_mut_ptr()) } != 0,
+			"Unable to get window attributes"
+		);
+		let attrs = unsafe { attrs.assume_init() };
 
 		// Get the frame-buffer configs
-		// TODO: Check if there's UB here, atomic solved the issue, but might still exist.
+		// SAFETY: We terminate the `FRAME_BUFFER_CONFIG_ATTRIBUTES` and aside
+		//         from that, the function should be inherently safe.
 		let mut fb_configs_len = MaybeUninit::uninit();
 		let fb_configs = unsafe {
 			glx::glXChooseFBConfig(
@@ -73,15 +80,22 @@ impl Window {
 				fb_configs_len.as_mut_ptr(),
 			)
 		};
+		anyhow::ensure!(!fb_configs.is_null(), "Unable to retrieve any valid fb configs");
+
+		// SAFETY: By here, we know the previous call succeeded and thus the variable
+		//         is initialized.
 		let fb_configs_len = unsafe { fb_configs_len.assume_init() };
 		log::info!("Found {fb_configs_len} frame-buffer configurations at {fb_configs:?}");
-		anyhow::ensure!(!fb_configs.is_null() && fb_configs_len != 0, "No fg configs found");
+		anyhow::ensure!(fb_configs_len != 0, "No fg configs found");
 
 		// Then select the first one we find
 		// TODO: Maybe pick one based on something?
+		// SAFETY: We just checked there's at least 1 config here.
 		let fb_config = unsafe { *fb_configs };
 
 		// Get the function to create the gl context
+		// SAFETY: The call to the function is safe, as we null terminate the string,
+		//         and the cast is also safe, as that's the signature of the returned function.
 		let create_gl_context = unsafe { glx::glXGetProcAddressARB(b"glXCreateContextAttribsARB\0" as *const _) }
 			.context("Unable to get function")?;
 		let create_gl_context: unsafe fn(
@@ -93,6 +107,9 @@ impl Window {
 		) -> glx::GLXContext = unsafe { mem::transmute(create_gl_context) };
 
 		// Then create the context
+		// SAFETY: We null-terminate `GL_CONFIG_ATTRIBUTES`,
+		//         every other argument has no possible UB and
+		//         the function should be inherently safe.
 		let gl_context = unsafe {
 			create_gl_context(
 				display,
@@ -129,22 +146,24 @@ impl Window {
 
 	/// Processes all X events
 	pub fn process_events(&self) {
+		// SAFETY: Checking for events and receiving them should be safe.
 		while unsafe { xlib::XPending(self.display) } != 0 {
-			let mut event = xlib::XEvent { type_: 0 };
-			unsafe { xlib::XNextEvent(self.display, &mut event) };
-
-			log::warn!("Received event {event:?}");
+			let mut event = MaybeUninit::uninit();
+			unsafe { xlib::XNextEvent(self.display, event.as_mut_ptr()) };
 		}
 	}
 
 	/// Returns if the gl context is current
 	pub fn is_context_current(&self) -> bool {
+		// SAFETY: No arguments are involved, call should be inherently safe.
 		let gl_context = unsafe { glx::glXGetCurrentContext() };
 		gl_context == self.gl_context
 	}
 
 	/// Makes the current gl context current
 	pub fn make_context_current(&self) -> Result<(), anyhow::Error> {
+		// SAFETY: The display, window id and gl context are known to be valid, thus
+		//         the call should be safe.
 		let res = unsafe { glx::glXMakeContextCurrent(self.display, self.id, self.id, self.gl_context) };
 
 		anyhow::ensure!(res == 1, "Failed to make context current");
@@ -153,6 +172,8 @@ impl Window {
 
 	/// Swaps buffers
 	pub fn swap_buffers(&self) {
+		// SAFETY: display and the window id are known to be valid, thus
+		//         the cal should be safe
 		unsafe {
 			glx::glXSwapBuffers(self.display, self.id);
 		}
