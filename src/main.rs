@@ -57,40 +57,12 @@ fn main() -> Result<(), anyhow::Error> {
 	// And then create the glium facade
 	let facade = GliumFacade::new(backend).context("Unable to create glium facade")?;
 
-	let mut image = images.next_image();
-	let mut uvs = ImageUvs::new(
-		image.width() as f32,
-		image.height() as f32,
-		window.width() as f32,
-		window.height() as f32,
-		false,
-	);
-
-	let vertices = [
-		Vertex {
-			vertex_pos: [-1.0, -1.0],
-			vertex_tex: [0.0, 0.0],
-		},
-		Vertex {
-			vertex_pos: [1.0, -1.0],
-			vertex_tex: [uvs.start()[0], 0.0],
-		},
-		Vertex {
-			vertex_pos: [-1.0, 1.0],
-			vertex_tex: [0.0, uvs.start()[1]],
-		},
-		Vertex {
-			vertex_pos: [1.0, 1.0],
-			vertex_tex: uvs.start(),
-		},
-	];
-
-	let mut vertex_buffer = glium::VertexBuffer::new(&facade, &vertices).context("Unable to create vertex buffer")?;
-
+	// Create the indices buffer
 	let indices =
 		glium::IndexBuffer::<u32>::new(&facade, glium::index::PrimitiveType::TrianglesList, &[0, 1, 3, 0, 3, 2])
 			.context("Unable to create index buffer")?;
 
+	// Create the program
 	let program = {
 		glium::Program::new(&facade, glium::program::ProgramCreationInput::SourceCode {
 			vertex_shader:                  include_str!("vertex.glsl"),
@@ -105,84 +77,137 @@ fn main() -> Result<(), anyhow::Error> {
 	}
 	.context("Unable to build program")?;
 
-
-	let mut texture = {
-		let image_dims = image.dimensions();
-		glium::texture::Texture2d::new(
-			&facade,
-			glium::texture::RawImage2d::from_raw_rgba(image.into_raw(), image_dims),
-		)
-		.context("Unable to create texture")?
-	};
+	let mut image = Image::new(&facade, &images, &window).context("Unable to create image")?;
 
 	let mut progress = 0.0;
 	loop {
+		// Process events
 		window.process_events();
 
+		// Then start drawing and clear
 		let mut target = facade.draw();
 		target.clear_color(0.0, 0.0, 1.0, 1.0);
 
-		let sampler = texture.sampled();
-
-		let tex_offset = uvs.offset(progress);
+		// And draw the image
+		let sampler = image.texture.sampled();
+		let tex_offset = image.uvs.offset(progress);
 		let uniforms = glium::uniform! {
 			tex_sampler: sampler,
 			tex_offset: tex_offset,
 		};
-
 		target
-			.draw(&vertex_buffer, &indices, &program, &uniforms, &Default::default())
+			.draw(&image.vertex_buffer, &indices, &program, &uniforms, &Default::default())
 			.context("Unable to draw")?;
 
+		// Finally finish
 		target.finish().context("Unable to finish drawing")?;
 
-
+		// Update our progress
 		progress += (1.0 / 60.0) / args.duration.as_secs_f32();
 
+		// And check if we've hit the end
 		if progress >= 1.0 {
 			progress = 0.0;
 
-			image = images.next_image();
-
-			let image_dims = image.dimensions();
-			texture = glium::texture::Texture2d::new(
-				&facade,
-				glium::texture::RawImage2d::from_raw_rgba(image.into_raw(), image_dims),
-			)
-			.context("Unable to create texture")?;
-
-			uvs = ImageUvs::new(
-				image_dims.0 as f32,
-				image_dims.1 as f32,
-				window.width() as f32,
-				window.height() as f32,
-				rand::random(),
-			);
-
-			let vertices = [
-				Vertex {
-					vertex_pos: [-1.0, -1.0],
-					vertex_tex: [0.0, 0.0],
-				},
-				Vertex {
-					vertex_pos: [1.0, -1.0],
-					vertex_tex: [uvs.start()[0], 0.0],
-				},
-				Vertex {
-					vertex_pos: [-1.0, 1.0],
-					vertex_tex: [0.0, uvs.start()[1]],
-				},
-				Vertex {
-					vertex_pos: [1.0, 1.0],
-					vertex_tex: uvs.start(),
-				},
-			];
-
-			vertex_buffer.as_mut_slice().write(&vertices);
+			image
+				.update(&facade, &images, &window)
+				.context("Unable to update image")?;
 		}
 	}
 }
 
+/// Image
+struct Image {
+	/// Texture
+	texture: glium::Texture2d,
+
+	/// Uvs
+	uvs: ImageUvs,
+
+	/// Vertex buffer
+	vertex_buffer: glium::VertexBuffer<Vertex>,
+}
+
+impl Image {
+	/// Creates a new image
+	pub fn new(facade: &GliumFacade, images: &Images, window: &Window) -> Result<Self, anyhow::Error> {
+		let image = images.next_image();
+
+		let image_dims = image.dimensions();
+		let texture = glium::texture::Texture2d::new(
+			facade,
+			glium::texture::RawImage2d::from_raw_rgba(image.into_raw(), image_dims),
+		)
+		.context("Unable to create texture")?;
+
+		let uvs = ImageUvs::new(
+			image_dims.0 as f32,
+			image_dims.1 as f32,
+			window.width() as f32,
+			window.height() as f32,
+			rand::random(),
+		);
+
+		let vertex_buffer = glium::VertexBuffer::dynamic(facade, &Self::vertices(uvs.start()))
+			.context("Unable to create vertex buffer")?;
+		Ok(Self {
+			texture,
+			uvs,
+			vertex_buffer,
+		})
+	}
+
+	/// Updates this image
+	pub fn update(&mut self, facade: &GliumFacade, images: &Images, window: &Window) -> Result<(), anyhow::Error> {
+		let image = images.next_image();
+
+		let image_dims = image.dimensions();
+		self.texture = glium::texture::Texture2d::new(
+			facade,
+			glium::texture::RawImage2d::from_raw_rgba(image.into_raw(), image_dims),
+		)
+		.context("Unable to create texture")?;
+
+		self.uvs = ImageUvs::new(
+			image_dims.0 as f32,
+			image_dims.1 as f32,
+			window.width() as f32,
+			window.height() as f32,
+			rand::random(),
+		);
+
+		self.vertex_buffer
+			.as_mut_slice()
+			.write(&Self::vertices(self.uvs.start()));
+
+		Ok(())
+	}
+
+	/// Creates the vertices for uvs
+	fn vertices(uvs_start: [f32; 2]) -> [Vertex; 4] {
+		[
+			Vertex {
+				vertex_pos: [-1.0, -1.0],
+				vertex_tex: [0.0, 0.0],
+			},
+			Vertex {
+				vertex_pos: [1.0, -1.0],
+				vertex_tex: [uvs_start[0], 0.0],
+			},
+			Vertex {
+				vertex_pos: [-1.0, 1.0],
+				vertex_tex: [0.0, uvs_start[1]],
+			},
+			Vertex {
+				vertex_pos: [1.0, 1.0],
+				vertex_tex: uvs_start,
+			},
+		]
+	}
+}
+
+
+/// Vertex
 #[derive(Copy, Clone)]
 struct Vertex {
 	vertex_pos: [f32; 2],
