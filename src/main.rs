@@ -1,18 +1,7 @@
 //! Zss
 
 // Features
-#![feature(
-	raw_ref_op,
-	format_args_capture,
-	atomic_mut_ptr,
-	bindings_after_at,
-	destructuring_assignment,
-	maybe_uninit_uninit_array,
-	maybe_uninit_array_assume_init,
-	try_blocks,
-	drain_filter,
-	exclusive_range_pattern
-)]
+#![feature(format_args_capture, try_blocks, drain_filter)]
 #![warn(unsafe_op_in_unsafe_fn)]
 
 // Modules
