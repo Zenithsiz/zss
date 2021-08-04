@@ -49,7 +49,7 @@ impl Images {
 		})
 	}
 
-	/// Returns the next image
+	/// Returns the next image, waiting if not yet available
 	pub fn next_image(&mut self) -> ImageBuffer<Rgba<u8>, Vec<u8>> {
 		// Current timeout if we need to retry the thread
 		let mut cur_timeout = 1.0;
@@ -60,24 +60,46 @@ impl Images {
 				Ok(image) => return image,
 
 				// If unable to, wait and increase the timeout
-				Err(_) => {
-					// Wait the timeout
-					log::info!("Loading thread died, waiting {cur_timeout} seconds before restarting thread");
-					std::thread::sleep(Duration::from_secs_f32(cur_timeout));
-
-					// Double it, up to 30 seconds
-					cur_timeout *= 2.0;
-					cur_timeout = cur_timeout.min(30.0);
-
-					// Re-spawn the thread and set our new receiver
-					let (sender, receiver) = mpsc::sync_channel(self.image_backlog);
-					let paths = self.paths.clone();
-					let window_size = self.window.size();
-					std::thread::spawn(move || self::image_loader(paths, window_size, sender));
-					self.receiver = receiver;
-				},
+				Err(_) => self.on_disconnect(&mut cur_timeout),
 			}
 		}
+	}
+
+	/// Returns the next image, returning `None` if not yet loaded
+	pub fn try_next_image(&mut self) -> Option<ImageBuffer<Rgba<u8>, Vec<u8>>> {
+		// Current timeout if we need to retry the thread
+		let mut cur_timeout = 1.0;
+
+		loop {
+			match self.receiver.try_recv() {
+				// if we got it, return it
+				Ok(image) => return Some(image),
+
+				// If it wasn't ready, return `None`
+				Err(mpsc::TryRecvError::Empty) => return None,
+
+				// If unable to, wait and increase the timeout
+				Err(mpsc::TryRecvError::Disconnected) => self.on_disconnect(&mut cur_timeout),
+			}
+		}
+	}
+
+	/// Function for retrying on disconnect
+	fn on_disconnect(&mut self, cur_timeout: &mut f32) {
+		// Wait the timeout
+		log::info!("Loading thread died, waiting {cur_timeout} seconds before restarting thread");
+		std::thread::sleep(Duration::from_secs_f32(*cur_timeout));
+
+		// Double it, up to 30 seconds
+		*cur_timeout *= 2.0;
+		*cur_timeout = cur_timeout.min(30.0);
+
+		// Re-spawn the thread and set our new receiver
+		let (sender, receiver) = mpsc::sync_channel(self.image_backlog);
+		let paths = self.paths.clone();
+		let window_size = self.window.size();
+		std::thread::spawn(move || self::image_loader(paths, window_size, sender));
+		self.receiver = receiver;
 	}
 }
 

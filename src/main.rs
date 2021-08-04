@@ -90,7 +90,12 @@ fn main() -> Result<(), anyhow::Error> {
 	let mut cur_image = Image::new(&facade, &mut images, &window).context("Unable to create image")?;
 	let mut next_image = Image::new(&facade, &mut images, &window).context("Unable to create image")?;
 
+	// Current progress through image
 	let mut progress = 0.0;
+
+	// If the next image is loaded
+	let mut next_image_is_loaded = false;
+
 	loop {
 		// Process events
 		window.process_events();
@@ -113,39 +118,67 @@ fn main() -> Result<(), anyhow::Error> {
 		}
 
 		// Update
-		self::update(
+		let update_res = self::update(
 			&mut progress,
+			&mut next_image_is_loaded,
 			&args,
 			&mut cur_image,
 			&mut next_image,
 			&facade,
 			&mut images,
 			&window,
-		)?;
+		);
+
+		if let Err(err) = update_res {
+			log::warn!("Unable to update: {err:?}");
+		}
 	}
 }
 
 /// Updates
+#[allow(clippy::too_many_arguments)] // It's a binary function, not library
 fn update(
-	progress: &mut f32, args: &Args, cur_image: &mut Image, next_image: &mut Image, facade: &GliumFacade,
-	images: &mut Images, window: &Window,
+	progress: &mut f32, next_image_is_loaded: &mut bool, args: &Args, cur_image: &mut Image, next_image: &mut Image,
+	facade: &GliumFacade, images: &mut Images, window: &Window,
 ) -> Result<(), anyhow::Error> {
 	// Increase the progress
 	*progress += (1.0 / 60.0) / args.duration.as_secs_f32();
 
-	// If we reached the end
+	// If the next image isn't loaded, try to load it
+	if !*next_image_is_loaded {
+		// If our progress is >= fade start, then we have to force wait for the image.
+		let force_wait = *progress >= args.fade;
+
+		if force_wait {
+			log::info!("Next image hasn't arrived yet at the end of current image, waiting for it");
+		}
+
+		// Then try to load it
+		*next_image_is_loaded ^= next_image
+			.try_update(facade, images, window, force_wait)
+			.context("Unable to update image")?;
+
+		// If we force waited but the next image isn't loaded, return Err
+		if force_wait && !*next_image_is_loaded {
+			return Err(anyhow::anyhow!("Unable to load next image even while force-waiting"));
+		}
+	}
+
+	// If we reached the end, swap the next to current and try to load the next
 	if *progress >= 1.0 {
 		// Reset the progress to where we where during the fade
 		*progress = 1.0 - args.fade;
 
 		// Swap the images
 		mem::swap(cur_image, next_image);
+		*next_image_is_loaded = false;
 
-		// And update the next
-		next_image
-			.update(facade, images, window)
+		// And try to update the next image
+		*next_image_is_loaded ^= next_image
+			.try_update(facade, images, window, false)
 			.context("Unable to update image")?;
 	}
+
 
 	Ok(())
 }
@@ -239,9 +272,15 @@ impl Image {
 		})
 	}
 
-	/// Updates this image
-	pub fn update(&mut self, facade: &GliumFacade, images: &mut Images, window: &Window) -> Result<(), anyhow::Error> {
-		let image = images.next_image();
+	/// Tries to update this image and returns if actually updated
+	pub fn try_update(
+		&mut self, facade: &GliumFacade, images: &mut Images, window: &Window, force_wait: bool,
+	) -> Result<bool, anyhow::Error> {
+		let image = match images.try_next_image() {
+			Some(image) => image,
+			None if force_wait => images.next_image(),
+			None => return Ok(false),
+		};
 
 		let image_dims = image.dimensions();
 		self.texture = glium::texture::Texture2d::new(
@@ -264,7 +303,7 @@ impl Image {
 			.as_mut_slice()
 			.write(&Self::vertices(self.uvs.start()));
 
-		Ok(())
+		Ok(true)
 	}
 
 	/// Creates the vertices for uvs
