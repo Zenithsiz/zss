@@ -6,7 +6,7 @@ keywords = []
 license = "MIT"
 name = "zss"
 repository = "https://github.com/Zenithsiz/zss"
-version = "1.0.0"
+version = "1.0.1"
 
 [dependencies]
 
