@@ -4,8 +4,10 @@
 use crate::window::Window;
 use anyhow::Context;
 use image::{imageops::FilterType, GenericImageView, ImageBuffer, Rgba};
+use num_rational::Ratio;
 use rand::prelude::SliceRandom;
 use std::{
+	cmp::Ordering,
 	path::{Path, PathBuf},
 	rc::Rc,
 	sync::mpsc,
@@ -144,7 +146,7 @@ fn image_loader(
 					.context("Unable to open image")?
 					.with_guessed_format()
 					.context("Unable to parse image")?;
-				image_reader.decode().context("Unable to decode image")?.flipv()
+				image_reader.decode().context("Unable to decode image")?
 			};
 
 			let image = match res {
@@ -155,22 +157,79 @@ fn image_loader(
 					return true;
 				},
 			};
-			log::info!("Loaded {path:?}");
+			let (image_width, image_height) = (image.width(), image.height());
+			log::info!("Loaded {path:?} ({image_width}x{image_height})");
 
-			// Then resize it to it's max size, taking into account the zooming we do
-			let (resize_width, resize_height) = match image.width() >= image.height() {
-				true => match image.height() >= window_height {
-					true => (image.width() * window_height / image.height(), window_height),
-					false => (image.width(), image.height()),
-				},
-				false => match image.width() >= window_width {
-					true => (window_width, image.height() * window_width / image.width()),
-					false => (image.width(), image.height()),
+			// Get the aspect ratios
+			let image_aspect_ratio = Ratio::new(image_width, image_height);
+			let window_aspect_ratio = Ratio::new(window_width, window_height);
+
+			// Check what direction we'll be scrolling with this image
+			let scroll_dir = match (image_width.cmp(&image_height), window_width.cmp(&window_height)) {
+				// If they're both square, no scrolling occurs
+				(Ordering::Equal, Ordering::Equal) => ScrollDir::None,
+
+				// Else if the window is tall and the window is wide, it must scroll vertically
+				(Ordering::Less | Ordering::Equal, Ordering::Greater | Ordering::Equal) => ScrollDir::Vertically,
+
+				// Else if the window is wide and the window is tall, it must scroll horizontally
+				(Ordering::Greater | Ordering::Equal, Ordering::Less | Ordering::Equal) => ScrollDir::Horizontally,
+
+				// Else we need to check the aspect ratio
+				(Ordering::Less, Ordering::Less) | (Ordering::Greater, Ordering::Greater) => {
+					match image_aspect_ratio.cmp(&window_aspect_ratio) {
+						// If the image is wider than the screen, we'll scroll horizontally
+						Ordering::Greater => ScrollDir::Horizontally,
+
+						// Else if the image is taller than the screen, we'll scroll vertically
+						Ordering::Less => ScrollDir::Vertically,
+
+						// Else if they're equal, no scrolling occurs
+						Ordering::Equal => ScrollDir::None,
+					}
 				},
 			};
-			let image = image
-				.resize_exact(resize_width, resize_height, FilterType::Lanczos3)
-				.to_rgba8();
+
+			match scroll_dir {
+				ScrollDir::Vertically => log::info!("Scrolling image vertically"),
+				ScrollDir::Horizontally => log::info!("Scrolling image horizontally"),
+				ScrollDir::None => log::info!("Not scrolling image"),
+			}
+
+			let resize_size = match scroll_dir {
+				// If we're scrolling vertically, resize if the image width is larger than the window width
+				ScrollDir::Vertically if image_width > window_width => {
+					Some((window_width, (window_width * image_height) / image_width))
+				},
+
+				// If we're scrolling horizontally, resize if the image height is larger than the window height
+				ScrollDir::Horizontally if image_height > window_height => {
+					Some(((window_height * image_width) / image_height, window_height))
+				},
+
+				// If we're not doing any scrolling and the window is smaller, resize the image to screen size
+				// Note: Since we're not scrolling, we know aspect ratio is the same and so
+				//       we only need to check the width.
+				ScrollDir::None if image_width > window_width => Some((window_width, window_height)),
+
+				// Else don't do any scrolling
+				_ => None,
+			};
+
+			// Resize if required
+			let image = match resize_size {
+				Some((resize_width, resize_height)) => {
+					log::info!("Resizing from {image_width}x{image_height} to {resize_width}x{resize_height}",);
+					image.resize_exact(resize_width, resize_height, FilterType::Lanczos3)
+				},
+				None => {
+					log::info!("Not resizing");
+					image
+				},
+			};
+
+			// Then flip the image vertically and get it as rgba8
+			let image = image.flipv().to_rgba8();
 
 			// Then send it and quit if we're done
 			if sender.send(image).is_err() {
@@ -180,4 +239,11 @@ fn image_loader(
 			false
 		});
 	}
+}
+
+/// Image scrolling direction
+enum ScrollDir {
+	Vertically,
+	Horizontally,
+	None,
 }

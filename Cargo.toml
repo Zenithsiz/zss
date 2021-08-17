@@ -34,3 +34,4 @@ simplelog = "0.10.0"
 clap = "2.33.3"
 
 # Util
+num-rational = "0.4.0"
