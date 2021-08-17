@@ -58,7 +58,7 @@ fn main() -> Result<(), anyhow::Error> {
 
 	// Load images
 	let mut images = Images::new(args.images_dir.clone(), args.image_backlog, Rc::clone(&window))
-		.context("Unable to load images")?;
+		.with_context(|| format!("Unable to load images from {}", args.images_dir.display()))?;
 
 	// Create the backend
 	let backend = GliumBackend::new(Rc::clone(&window)).context("Unable to create backend")?;
