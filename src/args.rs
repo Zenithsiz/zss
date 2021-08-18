@@ -21,16 +21,36 @@ pub struct Args {
 
 	/// Image backlog
 	pub image_backlog: usize,
+
+	/// Mode
+	pub mode: Mode,
+}
+
+/// Mode
+pub enum Mode {
+	/// Single image
+	Single,
+
+	/// Grid
+	Grid {
+		/// Width
+		width: usize,
+
+		/// Height
+		height: usize,
+	},
 }
 
 impl Args {
 	/// Parses all arguments
+	#[allow(clippy::too_many_lines)] // TODO: Refactor
 	pub fn new() -> Result<Self, anyhow::Error> {
 		const WINDOW_ID_STR: &str = "window-id";
 		const IMAGES_DIR_STR: &str = "images-dir";
 		const DURATION_STR: &str = "duration";
 		const FADE_STR: &str = "fade";
 		const IMAGE_BACKLOG_STR: &str = "image-backlog";
+		const GRID_STR: &str = "grid";
 
 		// Get all matches from cli
 		let matches = ClapApp::new("Zss")
@@ -84,6 +104,13 @@ impl Args {
 					.short("b")
 					.default_value("0"),
 			)
+			.arg(
+				ClapArg::with_name(GRID_STR)
+					.help("Grid")
+					.long_help("Displays a grid of images, as `{width}x{height}`")
+					.takes_value(true)
+					.long("grid"),
+			)
 			.get_matches();
 
 		let window_id = matches.value_of(WINDOW_ID_STR).expect("Required argument was missing");
@@ -114,12 +141,26 @@ impl Args {
 			.expect("Argument with default value was missing");
 		let image_backlog = image_backlog.parse().context("Unable to parse image backlog")?;
 
+		let mode = match matches.value_of(GRID_STR) {
+			Some(grid) => {
+				let (width, height) = grid
+					.split_once('x')
+					.context("Grid must be of the format `{width}x{height}`")?;
+				let width = width.trim().parse().context("Unable to parse grid width")?;
+				let height = height.trim().parse().context("Unable to parse grid height")?;
+
+				Mode::Grid { width, height }
+			},
+			None => Mode::Single,
+		};
+
 		Ok(Self {
 			window_id,
 			duration,
 			images_dir,
 			fade,
 			image_backlog,
+			mode,
 		})
 	}
 }

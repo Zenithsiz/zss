@@ -110,9 +110,6 @@ fn image_loader(
 	let mut paths = vec![];
 
 	loop {
-		// Shuffles all paths
-		paths.shuffle(&mut rand::thread_rng());
-
 		// Receives the next event, waiting if we're empty
 		let next_event = |is_empty| match is_empty {
 			true => {
@@ -142,6 +139,10 @@ fn image_loader(
 			}
 		}
 
+		// Shuffles all paths
+		log::info!("Shuffling all files");
+		paths.shuffle(&mut rand::thread_rng());
+		log::info!("Shuffled {} files", paths.len());
 
 		// Then load them all and send them
 		let mut send_err = None;
@@ -205,10 +206,10 @@ fn load_img(path: &Path, [window_width, window_height]: [u32; 2]) -> Result<Imag
 		// If they're both square, no scrolling occurs
 		(Ordering::Equal, Ordering::Equal) => ScrollDir::None,
 
-		// Else if the window is tall and the window is wide, it must scroll vertically
+		// Else if the image is tall and the window is wide, it must scroll vertically
 		(Ordering::Less | Ordering::Equal, Ordering::Greater | Ordering::Equal) => ScrollDir::Vertically,
 
-		// Else if the window is wide and the window is tall, it must scroll horizontally
+		// Else if the image is wide and the window is tall, it must scroll horizontally
 		(Ordering::Greater | Ordering::Equal, Ordering::Less | Ordering::Equal) => ScrollDir::Horizontally,
 
 		// Else we need to check the aspect ratio
