@@ -35,3 +35,6 @@ clap = "2.33.3"
 
 # Util
 num-rational = "0.4.0"
+
+# Filesystem
+notify = "4.0.17"

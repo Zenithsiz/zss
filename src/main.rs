@@ -1,7 +1,7 @@
 //! Zss
 
 // Features
-#![feature(format_args_capture, try_blocks, drain_filter)]
+#![feature(format_args_capture, try_blocks, drain_filter, never_type)]
 // Warnings
 #![warn(
 	clippy::correctness,
@@ -57,8 +57,8 @@ fn main() -> Result<(), anyhow::Error> {
 		.context("Unable to create window")?;
 
 	// Load images
-	let mut images = Images::new(args.images_dir.clone(), args.image_backlog, Rc::clone(&window))
-		.with_context(|| format!("Unable to load images from {}", args.images_dir.display()))?;
+	let mut images = Images::new(args.images_dir.clone(), args.image_backlog, window.size())
+		.with_context(|| format!("Unable to start loading images from {}", args.images_dir.display()))?;
 
 	// Create the backend
 	let backend = GliumBackend::new(Rc::clone(&window)).context("Unable to create backend")?;
