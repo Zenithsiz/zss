@@ -7,9 +7,6 @@ use std::{path::PathBuf, time::Duration};
 
 /// Args
 pub struct Args {
-	/// Window id
-	pub window_id: u64,
-
 	/// Duration
 	pub duration: Duration,
 
@@ -45,7 +42,6 @@ impl Args {
 	/// Parses all arguments
 	#[allow(clippy::too_many_lines)] // TODO: Refactor
 	pub fn new() -> Result<Self, anyhow::Error> {
-		const WINDOW_ID_STR: &str = "window-id";
 		const IMAGES_DIR_STR: &str = "images-dir";
 		const DURATION_STR: &str = "duration";
 		const FADE_STR: &str = "fade";
@@ -58,16 +54,6 @@ impl Args {
 			.author("Filipe Rodrigues <filipejacintorodrigues1@gmail.com>")
 			.about("Displays a scrolling wallpaper with Multiple images")
 			.arg(
-				ClapArg::with_name(WINDOW_ID_STR)
-					.help("The window id")
-					.long_help("An `X` window id. Typically obtained from `xwinwrap`")
-					.takes_value(true)
-					.required(true)
-					.long("window-id")
-					.short("w")
-					.index(1),
-			)
-			.arg(
 				ClapArg::with_name(IMAGES_DIR_STR)
 					.help("Images Directory")
 					.long_help("Path to directory with images. Non-images will be ignored.")
@@ -75,7 +61,7 @@ impl Args {
 					.required(true)
 					.long("images-dir")
 					.short("i")
-					.index(2),
+					.index(1),
 			)
 			.arg(
 				ClapArg::with_name(DURATION_STR)
@@ -112,11 +98,6 @@ impl Args {
 					.long("grid"),
 			)
 			.get_matches();
-
-		let window_id = matches.value_of(WINDOW_ID_STR).expect("Required argument was missing");
-		log::info!("Found window id {window_id}");
-		anyhow::ensure!(window_id.starts_with("0x"), "Window id didn't start with `0x`");
-		let window_id = u64::from_str_radix(&window_id[2..], 16).context("Unable to parse window id")?;
 
 		let duration = matches
 			.value_of(DURATION_STR)
@@ -155,7 +136,6 @@ impl Args {
 		};
 
 		Ok(Self {
-			window_id,
 			duration,
 			images_dir,
 			fade,

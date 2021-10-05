@@ -15,5 +15,9 @@ ZSS=($(pwd)/target/release/zss "WID"
 
 # Start
 echo "Starting"
-xwinwrap -b -sp -nf -ov -g "1360x768+0+312" -- ${ZSS[@]}
-#xwinwrap -b -sp -nf -ov -g "1920x1080+1360+0" -- ${ZSS[@]}
+cargo run --release --quiet -- \
+	~/.wallpaper/active \
+	--duration 15.0 \
+	--fade 0.8 \
+#	--backlog 4 \
+#	--grid 2x2

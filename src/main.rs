@@ -21,23 +21,31 @@
 #![allow(clippy::module_name_repetitions)]
 // We can't super control this, and it shouldn't be a big issue
 #![allow(clippy::multiple_crate_versions)]
+// `match` can look better than `if` / `else`
+#![allow(clippy::single_match)]
 
 // Modules
 mod args;
-mod glium_backend;
-mod glium_facade;
 mod images;
 mod uvs;
-mod window;
 
 // Imports
-use crate::{glium_backend::GliumBackend, glium_facade::GliumFacade, images::Images, uvs::ImageUvs};
+use crate::{images::Images, uvs::ImageUvs};
 use anyhow::Context;
 use args::Args;
 use cgmath::{Matrix4, Point2, Vector2, Vector3};
-use glium::Surface;
-use std::{mem, rc::Rc};
-use window::Window;
+use glium::{
+	glutin::{
+		self,
+		event::{Event, StartCause, WindowEvent},
+		platform::unix::{WindowBuilderExtUnix, XWindowType},
+	},
+	Surface,
+};
+use std::{
+	mem,
+	time::{Duration, Instant},
+};
 
 #[allow(clippy::too_many_lines)] // TODO: Refactor
 fn main() -> Result<(), anyhow::Error> {
@@ -53,29 +61,38 @@ fn main() -> Result<(), anyhow::Error> {
 	// Get arguments
 	let args = Args::new().context("Unable to retrieve arguments")?;
 
-	// Then create the window
-	let window = Window::from_window_id(args.window_id)
-		.map(Rc::new)
-		.context("Unable to create window")?;
+	let pos = glutin::dpi::PhysicalPosition { x: 1360, y: 0 };
+	let size = glutin::dpi::PhysicalSize {
+		width:  1920,
+		height: 1080,
+	};
+
+	// Create the event loop and build the display.
+	let event_loop = glium::glutin::event_loop::EventLoop::new();
+	let window_builder = glutin::window::WindowBuilder::new()
+		.with_position(pos)
+		.with_inner_size(size)
+		.with_x11_window_type(vec![XWindowType::Desktop]);
+	let context_builder = glutin::ContextBuilder::new();
+	let display = glium::Display::new(window_builder, context_builder, &event_loop).unwrap();
+
+	// Get the window size
+	let window_size = display.gl_window().window().inner_size();
+	let window_size = [window_size.width, window_size.height];
 
 	// Load images
-	let mut images = Images::new(args.images_dir.clone(), args.image_backlog, window.size())
+	let mut images = Images::new(args.images_dir.clone(), args.image_backlog, window_size)
 		.with_context(|| format!("Unable to start loading images from {}", args.images_dir.display()))?;
 
-	// Create the backend
-	let backend = GliumBackend::new(Rc::clone(&window)).context("Unable to create backend")?;
-
-	// And then create the glium facade
-	let facade = GliumFacade::new(backend).context("Unable to create glium facade")?;
-
 	// Create the indices buffer
-	let indices =
-		glium::IndexBuffer::<u32>::new(&facade, glium::index::PrimitiveType::TrianglesList, &[0, 1, 3, 0, 3, 2])
-			.context("Unable to create index buffer")?;
+	let indices = glium::IndexBuffer::<u32>::new(&display, glium::index::PrimitiveType::TrianglesList, &[
+		0, 1, 3, 0, 3, 2,
+	])
+	.context("Unable to create index buffer")?;
 
 	// Create the program
 	let program = {
-		glium::Program::new(&facade, glium::program::ProgramCreationInput::SourceCode {
+		glium::Program::new(&display, glium::program::ProgramCreationInput::SourceCode {
 			vertex_shader:                  include_str!("vertex.glsl"),
 			fragment_shader:                include_str!("frag.glsl"),
 			geometry_shader:                None,
@@ -93,20 +110,20 @@ fn main() -> Result<(), anyhow::Error> {
 
 	match args.mode {
 		args::Mode::Single => {
-			let cur_image = Image::new(&facade, &mut images, window.size()).context("Unable to create image")?;
-			let next_image = Image::new(&facade, &mut images, window.size()).context("Unable to create image")?;
+			let cur_image = Image::new(&display, &mut images, window_size).context("Unable to create image")?;
+			let next_image = Image::new(&display, &mut images, window_size).context("Unable to create image")?;
 			images_data.push((cur_image, next_image, 0.0, false));
 		},
 		args::Mode::Grid { width, height } => {
-			let [window_width, window_height] = window.size();
+			let [window_width, window_height] = window_size;
 
 			#[allow(clippy::cast_possible_truncation)] // Widths and heights will be small enough for this to not matter
-			let window_size = [window_width / width as u32, window_height / height as u32];
+			let cell_size = [window_width / width as u32, window_height / height as u32];
 
 			for _y in 0..height {
 				for _x in 0..width {
-					let cur_image = Image::new(&facade, &mut images, window_size).context("Unable to create image")?;
-					let next_image = Image::new(&facade, &mut images, window_size).context("Unable to create image")?;
+					let cur_image = Image::new(&display, &mut images, cell_size).context("Unable to create image")?;
+					let next_image = Image::new(&display, &mut images, cell_size).context("Unable to create image")?;
 
 					let progress = rand::random();
 
@@ -116,13 +133,31 @@ fn main() -> Result<(), anyhow::Error> {
 		},
 	}
 
+	// Run the event loop
+	event_loop.run(move |event, _, control_flow| {
+		match event {
+			Event::WindowEvent { event, .. } => match event {
+				// If we got a close request, exit and return
+				WindowEvent::CloseRequested | WindowEvent::Destroyed => {
+					*control_flow = glutin::event_loop::ControlFlow::Exit;
+					return;
+				},
 
-	loop {
-		// Process events
-		window.process_events();
+				_ => return,
+			},
+			Event::NewEvents(cause) => match cause {
+				// If it's time to draw, draw
+				StartCause::ResumeTimeReached { .. } | StartCause::Init => {
+					*control_flow =
+						glutin::event_loop::ControlFlow::WaitUntil(Instant::now() + Duration::from_secs(1) / 60);
+				},
+				_ => return,
+			},
+			_ => return,
+		}
 
 		// Draw
-		let mut target = facade.draw();
+		let mut target = display.draw();
 
 		// Clear the screen
 		target.clear_color(0.0, 0.0, 0.0, 1.0);
@@ -140,7 +175,7 @@ fn main() -> Result<(), anyhow::Error> {
 					&indices,
 					&program,
 					next_image_is_loaded,
-					&facade,
+					&display,
 					&mut images,
 					Vector2::new(1.0, 1.0),
 					Point2::new(0.0, 0.0),
@@ -170,7 +205,7 @@ fn main() -> Result<(), anyhow::Error> {
 							&indices,
 							&program,
 							next_image_is_loaded,
-							&facade,
+							&display,
 							&mut images,
 							scale,
 							offset,
@@ -181,16 +216,16 @@ fn main() -> Result<(), anyhow::Error> {
 		}
 
 		// Finish drawing
-		target.finish().context("Unable to finish drawing")?;
-	}
+		target.finish().expect("Unable to finish drawing");
+	});
 }
 
 /// Draws and updates
 #[allow(clippy::too_many_arguments)] // TODO: Refactor, closure doesn't work, though
 fn draw_update(
 	target: &mut glium::Frame, progress: &mut f32, args: &args::Args, cur_image: &mut Image, next_image: &mut Image,
-	indices: &glium::IndexBuffer<u32>, program: &glium::Program, next_image_is_loaded: &mut bool, facade: &GliumFacade,
-	images: &mut Images, scale: Vector2<f32>, offset: Point2<f32>,
+	indices: &glium::IndexBuffer<u32>, program: &glium::Program, next_image_is_loaded: &mut bool,
+	facade: &glium::Display, images: &mut Images, scale: Vector2<f32>, offset: Point2<f32>,
 ) {
 	if let Err(err) = self::draw(
 		target, *progress, args, cur_image, next_image, indices, program, scale, offset,
@@ -217,7 +252,7 @@ fn draw_update(
 #[allow(clippy::too_many_arguments)] // It's a binary function, not library
 fn update(
 	progress: &mut f32, next_image_is_loaded: &mut bool, args: &Args, cur_image: &mut Image, next_image: &mut Image,
-	facade: &GliumFacade, images: &mut Images,
+	facade: &glium::Display, images: &mut Images,
 ) -> Result<(), anyhow::Error> {
 	// Increase the progress
 	*progress += (1.0 / 60.0) / args.duration.as_secs_f32();
@@ -325,7 +360,7 @@ struct Image {
 impl Image {
 	/// Creates a new image
 	pub fn new(
-		facade: &GliumFacade, images: &mut Images, window_size @ [window_width, window_height]: [u32; 2],
+		facade: &glium::Display, images: &mut Images, window_size @ [window_width, window_height]: [u32; 2],
 	) -> Result<Self, anyhow::Error> {
 		let image = images.next_image();
 
@@ -357,7 +392,7 @@ impl Image {
 
 	/// Tries to update this image and returns if actually updated
 	pub fn try_update(
-		&mut self, facade: &GliumFacade, images: &mut Images, force_wait: bool,
+		&mut self, facade: &glium::Display, images: &mut Images, force_wait: bool,
 	) -> Result<bool, anyhow::Error> {
 		let image = match images.try_next_image() {
 			Some(image) => image,

@@ -10,12 +10,8 @@ version = "1.0.2"
 
 [dependencies]
 
-# X11
-#x11rb = "0.8.1"
-x11 = {version = "2.18.2", features = ["xlib", "glx", "xrender"]}
-
 # Opengl
-glium = {version = "0.30.1", default-features = false, features = []}
+glium = {version = "0.30.1", default-features = false, features = ["glutin"]}
 
 # Math
 cgmath = "0.18.0"
