@@ -27,7 +27,11 @@
 // Modules
 mod args;
 mod images;
+mod rect;
 mod uvs;
+
+// Exports
+pub use rect::Rect;
 
 // Imports
 use crate::{images::Images, uvs::ImageUvs};
@@ -38,7 +42,10 @@ use glium::{
 	glutin::{
 		self,
 		event::{Event, StartCause, WindowEvent},
-		platform::unix::{WindowBuilderExtUnix, XWindowType},
+		platform::unix::{
+			x11::ffi::{PropModeAppend, XA_ATOM},
+			EventLoopExtUnix, WindowBuilderExtUnix, WindowExtUnix, XWindowType,
+		},
 	},
 	Surface,
 };
@@ -46,6 +53,7 @@ use std::{
 	mem,
 	time::{Duration, Instant},
 };
+use x11::xlib;
 
 #[allow(clippy::too_many_lines)] // TODO: Refactor
 fn main() -> Result<(), anyhow::Error> {
@@ -61,20 +69,68 @@ fn main() -> Result<(), anyhow::Error> {
 	// Get arguments
 	let args = Args::new().context("Unable to retrieve arguments")?;
 
-	let pos = glutin::dpi::PhysicalPosition { x: 1360, y: 0 };
+	let pos = glutin::dpi::PhysicalPosition {
+		x: args.window_geometry.pos[0],
+		y: args.window_geometry.pos[1],
+	};
 	let size = glutin::dpi::PhysicalSize {
-		width:  1920,
-		height: 1080,
+		width:  args.window_geometry.size[0],
+		height: args.window_geometry.size[1],
 	};
 
 	// Create the event loop and build the display.
-	let event_loop = glium::glutin::event_loop::EventLoop::new();
+	let event_loop =
+		glium::glutin::event_loop::EventLoop::<!>::new_x11().context("Unable to create an x11 event loop")?;
 	let window_builder = glutin::window::WindowBuilder::new()
 		.with_position(pos)
 		.with_inner_size(size)
 		.with_x11_window_type(vec![XWindowType::Desktop]);
 	let context_builder = glutin::ContextBuilder::new();
 	let display = glium::Display::new(window_builder, context_builder, &event_loop).unwrap();
+
+	// Set the window as always below
+	// Note: Required so it doesn't hide itself if the desktop is clicked on
+	// TODO: Do this through `glutin`, this is way too hacky
+	// SAFETY: TODO
+	{
+		// Get the xlib display and window
+		let gl_window = display.gl_window();
+		let window = gl_window.window();
+		let display = window.xlib_display().expect("No `X` display found").cast();
+		let window = window.xlib_window().expect("No `X` window found");
+
+		// Flush the existing `XMapRaised`
+		unsafe { xlib::XFlush(display) };
+		std::thread::sleep(Duration::from_millis(100));
+
+		// Unmap the window temporarily
+		unsafe { xlib::XUnmapWindow(display, window) };
+		unsafe { xlib::XFlush(display) };
+		std::thread::sleep(Duration::from_millis(100));
+
+		// Add the always below hint to the window manager
+		{
+			let property = unsafe { xlib::XInternAtom(display, b"_NET_WM_STATE\0".as_ptr().cast(), 0) };
+			let value = unsafe { xlib::XInternAtom(display, b"_NET_WM_STATE_BELOW\0".as_ptr().cast(), 0) };
+			let res = unsafe {
+				xlib::XChangeProperty(
+					display,
+					window,
+					property,
+					XA_ATOM,
+					32,
+					PropModeAppend,
+					(&value as *const u64).cast(),
+					1,
+				)
+			};
+			assert_eq!(res, 1, "Unable to change window property");
+		}
+
+		// Then remap it
+		unsafe { xlib::XMapRaised(display, window) };
+		unsafe { xlib::XFlush(display) };
+	}
 
 	// Get the window size
 	let window_size = display.gl_window().window().inner_size();
@@ -145,13 +201,10 @@ fn main() -> Result<(), anyhow::Error> {
 
 				_ => return,
 			},
-			Event::NewEvents(cause) => match cause {
-				// If it's time to draw, draw
-				StartCause::ResumeTimeReached { .. } | StartCause::Init => {
-					*control_flow =
-						glutin::event_loop::ControlFlow::WaitUntil(Instant::now() + Duration::from_secs(1) / 60);
-				},
-				_ => return,
+			// If it's time to draw, draw
+			Event::NewEvents(StartCause::ResumeTimeReached { .. } | StartCause::Init) => {
+				*control_flow =
+					glutin::event_loop::ControlFlow::WaitUntil(Instant::now() + Duration::from_secs(1) / 60);
 			},
 			_ => return,
 		}
@@ -263,7 +316,7 @@ fn update(
 		let force_wait = *progress >= args.fade;
 
 		if force_wait {
-			log::info!("Next image hasn't arrived yet at the end of current image, waiting for it");
+			log::warn!("Next image hasn't arrived yet at the end of current image, waiting for it");
 		}
 
 		// Then try to load it

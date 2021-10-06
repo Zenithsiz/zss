@@ -129,7 +129,7 @@ fn image_loader(
 			// Note: On `Rename`, the original path will be removed by the `drain_filter` below
 			match event {
 				notify::DebouncedEvent::Create(path) | notify::DebouncedEvent::Rename(_, path) => {
-					log::info!("Adding {path:?}");
+					log::trace!("Adding {path:?}");
 					paths.push(path);
 				},
 				notify::DebouncedEvent::Error(err, path) => {
@@ -140,9 +140,9 @@ fn image_loader(
 		}
 
 		// Shuffles all paths
-		log::info!("Shuffling all files");
+		log::trace!("Shuffling all files");
 		paths.shuffle(&mut rand::thread_rng());
-		log::info!("Shuffled {} files", paths.len());
+		log::trace!("Shuffled {} files", paths.len());
 
 		// Then load them all and send them
 		let mut send_err = None;
@@ -199,7 +199,7 @@ fn load_img(path: &Path, [window_width, window_height]: [u32; 2]) -> Result<Imag
 	let image_aspect_ratio = Ratio::new(image_width, image_height);
 	let window_aspect_ratio = Ratio::new(window_width, window_height);
 
-	log::info!("Loaded {path:?} ({image_width}x{image_height})");
+	log::trace!("Loaded {path:?} ({image_width}x{image_height})");
 
 	// Then check what direction we'll be scrolling the image
 	let scroll_dir = match (image_width.cmp(&image_height), window_width.cmp(&window_height)) {
@@ -227,9 +227,9 @@ fn load_img(path: &Path, [window_width, window_height]: [u32; 2]) -> Result<Imag
 		},
 	};
 	match scroll_dir {
-		ScrollDir::Vertically => log::info!("Scrolling image vertically"),
-		ScrollDir::Horizontally => log::info!("Scrolling image horizontally"),
-		ScrollDir::None => log::info!("Not scrolling image"),
+		ScrollDir::Vertically => log::trace!("Scrolling image vertically"),
+		ScrollDir::Horizontally => log::trace!("Scrolling image horizontally"),
+		ScrollDir::None => log::trace!("Not scrolling image"),
 	}
 
 	// Then get the size we'll be resizing to, if any
@@ -259,13 +259,13 @@ fn load_img(path: &Path, [window_width, window_height]: [u32; 2]) -> Result<Imag
 			let reduction = 100.0 * (f64::from(resize_width) * f64::from(resize_height)) /
 				(f64::from(image_width) * f64::from(image_height));
 
-			log::info!(
+			log::trace!(
 				"Resizing from {image_width}x{image_height} to {resize_width}x{resize_height} ({reduction:.2}%)",
 			);
 			image.resize_exact(resize_width, resize_height, FilterType::Lanczos3)
 		},
 		None => {
-			log::info!("Not resizing");
+			log::trace!("Not resizing");
 			image
 		},
 	};

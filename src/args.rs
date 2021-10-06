@@ -1,12 +1,16 @@
 //! Args
 
 // Imports
+use crate::Rect;
 use anyhow::Context;
 use clap::{App as ClapApp, Arg as ClapArg};
 use std::{path::PathBuf, time::Duration};
 
 /// Args
 pub struct Args {
+	/// Window geometry
+	pub window_geometry: Rect<u32>,
+
 	/// Duration
 	pub duration: Duration,
 
@@ -42,6 +46,7 @@ impl Args {
 	/// Parses all arguments
 	#[allow(clippy::too_many_lines)] // TODO: Refactor
 	pub fn new() -> Result<Self, anyhow::Error> {
+		const WINDOW_GEOMETRY: &str = "window-geometry";
 		const IMAGES_DIR_STR: &str = "images-dir";
 		const DURATION_STR: &str = "duration";
 		const FADE_STR: &str = "fade";
@@ -53,6 +58,15 @@ impl Args {
 			.version("1.0")
 			.author("Filipe Rodrigues <filipejacintorodrigues1@gmail.com>")
 			.about("Displays a scrolling wallpaper with Multiple images")
+			.arg(
+				ClapArg::with_name(WINDOW_GEOMETRY)
+					.help("Window geometry")
+					.long_help("Window geometry (`{width}x{height}+{x}+{y}` or `{width}x{height}`)")
+					.takes_value(true)
+					.required(true)
+					.long("window-geometry")
+					.short("g"),
+			)
 			.arg(
 				ClapArg::with_name(IMAGES_DIR_STR)
 					.help("Images Directory")
@@ -99,6 +113,11 @@ impl Args {
 			)
 			.get_matches();
 
+		let window_geometry = matches
+			.value_of(WINDOW_GEOMETRY)
+			.expect("Argument with default value was missing");
+		let window_geometry = Rect::parse_from_geometry(window_geometry).context("Unable to parse window geometry")?;
+
 		let duration = matches
 			.value_of(DURATION_STR)
 			.expect("Argument with default value was missing");
@@ -136,6 +155,7 @@ impl Args {
 		};
 
 		Ok(Self {
+			window_geometry,
 			duration,
 			images_dir,
 			fade,

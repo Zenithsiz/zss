@@ -17,6 +17,7 @@ ZSS=($(pwd)/target/release/zss "WID"
 echo "Starting"
 cargo run --release --quiet -- \
 	~/.wallpaper/active \
+	--window-geometry 1920x1080+1360+0 \
 	--duration 15.0 \
 	--fade 0.8 \
 #	--backlog 4 \
